@@ -106,8 +106,9 @@ function PersonForm({
       setF({ ...f, [k]: e.target.value });
 
   const save = async () => {
-    if (person) await api.update("people", person.id, f);
-    else await api.create("people", f);
+    const body = { ...f, name: f.name.trim() };
+    if (person) await api.update("people", person.id, body);
+    else await api.create("people", body);
     onSaved();
   };
 
@@ -163,7 +164,11 @@ function PersonForm({
         <button className="btn" onClick={onCancel}>
           Cancel
         </button>
-        <button className="btn btn-primary" disabled={!f.name} onClick={save}>
+        <button
+          className="btn btn-primary"
+          disabled={!f.name.trim()}
+          onClick={save}
+        >
           Save
         </button>
       </div>

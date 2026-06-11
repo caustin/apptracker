@@ -26,11 +26,17 @@ export function GoalsPage({ db, onChange }: { db: Db; onChange: () => void }) {
     return Number.isFinite(n) && n > 0 ? n : 1;
   };
 
+  const toPositiveIntOrNull = (value: string) => {
+    if (!value) return null;
+    const n = Math.trunc(Number(value));
+    return Number.isFinite(n) && n > 0 ? n : null;
+  };
+
   const save = async () => {
     await api.saveGoals({
       weeklyApplications: toPositiveInt(f.weeklyApplications),
-      salaryMin: f.salaryMin ? Number(f.salaryMin) : null,
-      salaryMax: f.salaryMax ? Number(f.salaryMax) : null,
+      salaryMin: toPositiveIntOrNull(f.salaryMin),
+      salaryMax: toPositiveIntOrNull(f.salaryMax),
       targetRole: f.targetRole || null,
       targetDate: f.targetDate || null,
       notes: f.notes || null,
@@ -67,6 +73,7 @@ export function GoalsPage({ db, onChange }: { db: Db; onChange: () => void }) {
             Salary floor ($)
             <input
               type="number"
+              step="1"
               value={f.salaryMin}
               onChange={set("salaryMin")}
             />
@@ -75,6 +82,7 @@ export function GoalsPage({ db, onChange }: { db: Db; onChange: () => void }) {
             Salary target ($)
             <input
               type="number"
+              step="1"
               value={f.salaryMax}
               onChange={set("salaryMax")}
             />
