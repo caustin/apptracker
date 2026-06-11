@@ -9,20 +9,31 @@ import { GoalsPage } from "./components/Goals";
 
 const TABS = ["Dashboard", "Positions", "People", "Resumes", "Goals"] as const;
 type Tab = (typeof TABS)[number];
+const TAB_SET = new Set<string>(TABS as readonly string[]);
+
+function tabFromHash(hash: string): Tab {
+  try {
+    const raw = decodeURIComponent(hash.replace(/^#/, ""));
+    return TAB_SET.has(raw) ? (raw as Tab) : "Dashboard";
+  } catch {
+    return "Dashboard";
+  }
+}
 
 export function App() {
   const [db, setDb] = useState<Db | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [tab, setTabState] = useState<Tab>(() => {
-    const hash = decodeURIComponent(location.hash.slice(1));
-    return (TABS as readonly string[]).includes(hash)
-      ? (hash as Tab)
-      : "Dashboard";
-  });
+  const [tab, setTabState] = useState<Tab>(() => tabFromHash(location.hash));
   const setTab = (t: Tab) => {
     setTabState(t);
     location.hash = t;
   };
+
+  useEffect(() => {
+    const onHashChange = () => setTabState(tabFromHash(location.hash));
+    window.addEventListener("hashchange", onHashChange);
+    return () => window.removeEventListener("hashchange", onHashChange);
+  }, []);
 
   const refresh = useCallback(() => {
     api
