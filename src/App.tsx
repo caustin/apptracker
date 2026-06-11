@@ -1,13 +1,13 @@
-import { useCallback, useEffect, useState } from 'react';
-import { api } from './api';
-import type { Db } from './types';
-import { Dashboard } from './components/Dashboard';
-import { Positions } from './components/Positions';
-import { People } from './components/People';
-import { Resumes } from './components/Resumes';
-import { GoalsPage } from './components/Goals';
+import { useCallback, useEffect, useState } from "react";
+import { api } from "./api";
+import type { Db } from "./types";
+import { Dashboard } from "./components/Dashboard";
+import { Positions } from "./components/Positions";
+import { People } from "./components/People";
+import { Resumes } from "./components/Resumes";
+import { GoalsPage } from "./components/Goals";
 
-const TABS = ['Dashboard', 'Positions', 'People', 'Resumes', 'Goals'] as const;
+const TABS = ["Dashboard", "Positions", "People", "Resumes", "Goals"] as const;
 type Tab = (typeof TABS)[number];
 
 export function App() {
@@ -15,7 +15,9 @@ export function App() {
   const [error, setError] = useState<string | null>(null);
   const [tab, setTabState] = useState<Tab>(() => {
     const hash = decodeURIComponent(location.hash.slice(1));
-    return (TABS as readonly string[]).includes(hash) ? (hash as Tab) : 'Dashboard';
+    return (TABS as readonly string[]).includes(hash)
+      ? (hash as Tab)
+      : "Dashboard";
   });
   const setTab = (t: Tab) => {
     setTabState(t);
@@ -23,7 +25,10 @@ export function App() {
   };
 
   const refresh = useCallback(() => {
-    api.loadAll().then(setDb).catch((e) => setError(String(e)));
+    api
+      .loadAll()
+      .then(setDb)
+      .catch((e) => setError(String(e)));
   }, []);
 
   useEffect(refresh, [refresh]);
@@ -41,7 +46,7 @@ export function App() {
             {TABS.map((t) => (
               <button
                 key={t}
-                className={`nav-tab ${tab === t ? 'active' : ''}`}
+                className={`nav-tab ${tab === t ? "active" : ""}`}
                 onClick={() => setTab(t)}
               >
                 {t}
@@ -52,13 +57,17 @@ export function App() {
       </header>
 
       <main className="content">
-        {error && <div className="error-banner">Could not reach the API server — {error}</div>}
+        {error && (
+          <div className="error-banner">
+            Could not reach the API server — {error}
+          </div>
+        )}
         {!db && !error && <div className="loading">Loading…</div>}
-        {db && tab === 'Dashboard' && <Dashboard db={db} onNavigate={setTab} />}
-        {db && tab === 'Positions' && <Positions db={db} onChange={refresh} />}
-        {db && tab === 'People' && <People db={db} onChange={refresh} />}
-        {db && tab === 'Resumes' && <Resumes db={db} onChange={refresh} />}
-        {db && tab === 'Goals' && <GoalsPage db={db} onChange={refresh} />}
+        {db && tab === "Dashboard" && <Dashboard db={db} onNavigate={setTab} />}
+        {db && tab === "Positions" && <Positions db={db} onChange={refresh} />}
+        {db && tab === "People" && <People db={db} onChange={refresh} />}
+        {db && tab === "Resumes" && <Resumes db={db} onChange={refresh} />}
+        {db && tab === "Goals" && <GoalsPage db={db} onChange={refresh} />}
       </main>
     </div>
   );

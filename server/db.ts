@@ -1,12 +1,12 @@
-import fs from 'node:fs';
-import Database from 'better-sqlite3';
-import { drizzle } from 'drizzle-orm/better-sqlite3';
+import fs from "node:fs";
+import Database from "better-sqlite3";
+import { drizzle } from "drizzle-orm/better-sqlite3";
 
-fs.mkdirSync('data/resumes', { recursive: true });
+fs.mkdirSync("data/resumes", { recursive: true });
 
-const sqlite = new Database('data/apptracker.db');
-sqlite.pragma('journal_mode = WAL');
-sqlite.pragma('foreign_keys = ON');
+const sqlite = new Database("data/apptracker.db");
+sqlite.pragma("journal_mode = WAL");
+sqlite.pragma("foreign_keys = ON");
 
 sqlite.exec(`
   CREATE TABLE IF NOT EXISTS resumes (
@@ -73,9 +73,13 @@ sqlite.exec(`
 
 // In-place migration for databases created before the resumes table existed
 // (positions used to have a free-text "resume" column instead).
-const positionCols = sqlite.prepare('PRAGMA table_info(positions)').all() as { name: string }[];
-if (!positionCols.some((c) => c.name === 'resume_id')) {
-  sqlite.exec('ALTER TABLE positions ADD COLUMN resume_id INTEGER REFERENCES resumes(id) ON DELETE SET NULL');
+const positionCols = sqlite.prepare("PRAGMA table_info(positions)").all() as {
+  name: string;
+}[];
+if (!positionCols.some((c) => c.name === "resume_id")) {
+  sqlite.exec(
+    "ALTER TABLE positions ADD COLUMN resume_id INTEGER REFERENCES resumes(id) ON DELETE SET NULL",
+  );
 }
 
 export const db = drizzle(sqlite);

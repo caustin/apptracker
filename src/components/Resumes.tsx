@@ -1,17 +1,19 @@
-import { useRef, useState } from 'react';
-import { api } from '../api';
-import type { Db, Resume } from '../types';
-import { fmtDate, resumeFileUrl } from '../types';
+import { useRef, useState } from "react";
+import { api } from "../api";
+import type { Db, Resume } from "../types";
+import { fmtDate, resumeFileUrl } from "../types";
 
 export function Resumes({ db, onChange }: { db: Db; onChange: () => void }) {
   const fileRef = useRef<HTMLInputElement>(null);
-  const [pending, setPending] = useState<{ file: File; label: string } | null>(null);
+  const [pending, setPending] = useState<{ file: File; label: string } | null>(
+    null,
+  );
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const choose = (file: File) => {
     setError(null);
-    setPending({ file, label: file.name.replace(/\.pdf$/i, '') });
+    setPending({ file, label: file.name.replace(/\.pdf$/i, "") });
   };
 
   const upload = async () => {
@@ -30,11 +32,12 @@ export function Resumes({ db, onChange }: { db: Db; onChange: () => void }) {
   };
 
   const del = async (id: number, name: string, usedBy: number) => {
-    const warning = usedBy > 0
-      ? `Delete "${name}"? It is attached to ${usedBy} position${usedBy === 1 ? '' : 's'}, which will be unlinked.`
-      : `Delete "${name}"?`;
+    const warning =
+      usedBy > 0
+        ? `Delete "${name}"? It is attached to ${usedBy} position${usedBy === 1 ? "" : "s"}, which will be unlinked.`
+        : `Delete "${name}"?`;
     if (!confirm(warning)) return;
-    await api.remove('resumes', id);
+    await api.remove("resumes", id);
     onChange();
   };
 
@@ -42,7 +45,11 @@ export function Resumes({ db, onChange }: { db: Db; onChange: () => void }) {
     <div>
       <div className="page-head">
         <h1>Resumes</h1>
-        <button className="btn btn-primary" disabled={busy || !!pending} onClick={() => fileRef.current?.click()}>
+        <button
+          className="btn btn-primary"
+          disabled={busy || !!pending}
+          onClick={() => fileRef.current?.click()}
+        >
           + Upload PDF
         </button>
         <input
@@ -53,7 +60,7 @@ export function Resumes({ db, onChange }: { db: Db; onChange: () => void }) {
           onChange={(e) => {
             const f = e.target.files?.[0];
             if (f) choose(f);
-            e.target.value = '';
+            e.target.value = "";
           }}
         />
       </div>
@@ -64,19 +71,30 @@ export function Resumes({ db, onChange }: { db: Db; onChange: () => void }) {
         <div className="card form-card">
           <h2>Label this resume</h2>
           <p className="muted small upload-filename">{pending.file.name}</p>
-          <label className="field">Label
+          <label className="field">
+            Label
             <input
               value={pending.label}
               autoFocus
-              onChange={(e) => setPending({ ...pending, label: e.target.value })}
-              onKeyDown={(e) => { if (e.key === 'Enter' && pending.label.trim()) upload(); }}
+              onChange={(e) =>
+                setPending({ ...pending, label: e.target.value })
+              }
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && pending.label.trim()) upload();
+              }}
               placeholder="e.g. Platform-focused v3"
             />
           </label>
           <div className="form-actions">
-            <button className="btn" onClick={() => setPending(null)}>Cancel</button>
-            <button className="btn btn-primary" disabled={busy || !pending.label.trim()} onClick={upload}>
-              {busy ? 'Uploading…' : 'Upload'}
+            <button className="btn" onClick={() => setPending(null)}>
+              Cancel
+            </button>
+            <button
+              className="btn btn-primary"
+              disabled={busy || !pending.label.trim()}
+              onClick={upload}
+            >
+              {busy ? "Uploading…" : "Upload"}
             </button>
           </div>
         </div>
@@ -84,7 +102,8 @@ export function Resumes({ db, onChange }: { db: Db; onChange: () => void }) {
 
       {db.resumes.length === 0 && !pending && (
         <div className="empty-state big">
-          No resumes yet. Upload the PDF versions you send out, give each a label, then attach one to each position.
+          No resumes yet. Upload the PDF versions you send out, give each a
+          label, then attach one to each position.
         </div>
       )}
 
@@ -106,7 +125,12 @@ export function Resumes({ db, onChange }: { db: Db; onChange: () => void }) {
   );
 }
 
-function ResumeRow({ resume, usedBy, onDelete, onChange }: {
+function ResumeRow({
+  resume,
+  usedBy,
+  onDelete,
+  onChange,
+}: {
   resume: Resume;
   usedBy: number;
   onDelete: () => void;
@@ -116,7 +140,7 @@ function ResumeRow({ resume, usedBy, onDelete, onChange }: {
 
   const rename = async () => {
     if (name && name.trim() && name.trim() !== resume.name) {
-      await api.update('resumes', resume.id, { name: name.trim() });
+      await api.update("resumes", resume.id, { name: name.trim() });
       onChange();
     }
     setName(null);
@@ -125,7 +149,9 @@ function ResumeRow({ resume, usedBy, onDelete, onChange }: {
   return (
     <div className="resume-row">
       <div className="position-main">
-        <span className="resume-icon" aria-hidden>PDF</span>
+        <span className="resume-icon" aria-hidden>
+          PDF
+        </span>
         {name === null ? (
           <span className="position-company">{resume.name}</span>
         ) : (
@@ -135,8 +161,8 @@ function ResumeRow({ resume, usedBy, onDelete, onChange }: {
             autoFocus
             onChange={(e) => setName(e.target.value)}
             onKeyDown={(e) => {
-              if (e.key === 'Enter') rename();
-              if (e.key === 'Escape') setName(null);
+              if (e.key === "Enter") rename();
+              if (e.key === "Escape") setName(null);
             }}
             onBlur={rename}
           />
@@ -145,11 +171,24 @@ function ResumeRow({ resume, usedBy, onDelete, onChange }: {
       <div className="position-meta">
         <span className="muted">uploaded {fmtDate(resume.createdAt)}</span>
         <span className="muted">
-          {usedBy === 0 ? 'not attached' : `used by ${usedBy} position${usedBy === 1 ? '' : 's'}`}
+          {usedBy === 0
+            ? "not attached"
+            : `used by ${usedBy} position${usedBy === 1 ? "" : "s"}`}
         </span>
-        <button className="link-btn" onClick={() => setName(resume.name)}>rename</button>
-        <a className="link-btn" href={resumeFileUrl(resume.id)} target="_blank" rel="noreferrer">view ↗</a>
-        <button className="link-btn danger" onClick={onDelete}>delete</button>
+        <button className="link-btn" onClick={() => setName(resume.name)}>
+          rename
+        </button>
+        <a
+          className="link-btn"
+          href={resumeFileUrl(resume.id)}
+          target="_blank"
+          rel="noreferrer"
+        >
+          view ↗
+        </a>
+        <button className="link-btn danger" onClick={onDelete}>
+          delete
+        </button>
       </div>
     </div>
   );
