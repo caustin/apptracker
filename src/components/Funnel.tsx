@@ -65,14 +65,16 @@ export function Funnel({ positions }: { positions: Position[] }) {
                     fill={COLORS[i]}
                     opacity="0.25"
                   />
-                  <text
-                    x={cx + CHART_W / 2 - 4}
-                    y={y - GAP / 2 + 4}
-                    textAnchor="end"
-                    className="funnel-pct"
-                  >
-                    {pct}% →
-                  </text>
+                  {pct !== null && (
+                    <text
+                      x={cx + CHART_W / 2 - 4}
+                      y={y - GAP / 2 + 4}
+                      textAnchor="end"
+                      className="funnel-pct"
+                    >
+                      {pct}% →
+                    </text>
+                  )}
                 </>
               )}
               <rect
