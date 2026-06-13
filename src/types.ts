@@ -109,7 +109,13 @@ export const EVENT_META: Record<EventType, string> = {
 
 export const EVENT_TYPES = Object.keys(EVENT_META) as EventType[];
 
-export const localISO = (d: Date) => d.toLocaleDateString("en-CA"); // YYYY-MM-DD
+// YYYY-MM-DD
+export const localISO = (d: Date) => {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+};
 export const today = () => localISO(new Date());
 
 export function fmtMoney(n: number | null | undefined): string {
