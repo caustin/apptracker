@@ -36,9 +36,13 @@ export function App() {
   }, []);
 
   const refresh = useCallback(() => {
+    setError(null);
     api
       .loadAll()
-      .then(setDb)
+      .then((next) => {
+        setDb(next);
+        setError(null);
+      })
       .catch((e) => setError(String(e)));
   }, []);
 
