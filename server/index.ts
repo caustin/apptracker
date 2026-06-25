@@ -1,150 +1,259 @@
-import fs from "node:fs";
-import { serve } from "@hono/node-server";
-import { serveStatic } from "@hono/node-server/serve-static";
 import { Hono } from "hono";
-import { eq } from "drizzle-orm";
-import type { SQLiteTable } from "drizzle-orm/sqlite-core";
-import { db } from "./db";
+import { and, eq } from "drizzle-orm";
+import type { AnyPgColumn, PgTable } from "drizzle-orm/pg-core";
+import { z } from "zod";
+import { zipSync, strToU8 } from "fflate";
+import { makeDb, type DB } from "./db";
+import { makeAuth, type Auth } from "./auth";
+import { r2Storage } from "./storage";
+import type { Env } from "./env";
 import { positions, people, events, goals, resumes } from "./schema";
 
-const app = new Hono();
+type Variables = { db: DB; auth: Auth; userId: string };
+const app = new Hono<{ Bindings: Env; Variables: Variables }>();
+
 app.onError((err, c) => c.json({ error: err.message }, 500));
 
-const today = () => new Date().toLocaleDateString("en-CA"); // local YYYY-MM-DD
+const today = () => new Date().toISOString().slice(0, 10); // UTC YYYY-MM-DD
+const MAX_RESUMES = 25; // per-user upload cap (keeps disk/quota bounded)
 
-function pick(body: Record<string, unknown>, fields: string[]) {
-  const out: Record<string, unknown> = {};
-  for (const f of fields)
-    if (f in body) out[f] = body[f] === "" ? null : body[f];
-  return out;
+function parseId(c: { req: { param: (k: string) => string } }): number | null {
+  const n = Number(c.req.param("id"));
+  return Number.isInteger(n) && n > 0 ? n : null;
 }
 
-interface Resource {
-  name: string;
-  table: SQLiteTable;
-  fields: string[];
-  required: string[];
-  beforeSave?: (
-    data: Record<string, unknown>,
-    existing?: Record<string, unknown>,
-  ) => void;
+const zerr = (e: z.ZodError) =>
+  e.issues.map((i) => `${i.path.join(".") || "body"}: ${i.message}`).join("; ");
+
+// Drop keys the client omitted so DB column defaults (e.g. status='lead') apply.
+function clean(obj: Record<string, unknown>) {
+  for (const k of Object.keys(obj)) if (obj[k] === undefined) delete obj[k];
+  return obj;
 }
 
-const resources: Resource[] = [
-  {
-    name: "positions",
+const safeName = (s: string) => s.replace(/[^\w.-]+/g, "_").slice(0, 80) || "resume";
+
+// ---------------------------------------------------------------------------
+// Per-request DB + auth (Workers bindings are request-scoped), then a session
+// guard that scopes everything to the signed-in user.
+// ---------------------------------------------------------------------------
+
+app.use("/api/*", async (c, next) => {
+  const { db, pool } = makeDb(c.env.DATABASE_URL);
+  c.set("db", db);
+  c.set("auth", makeAuth(c.env, db));
+  try {
+    await next();
+  } finally {
+    try {
+      c.executionCtx.waitUntil(pool.end());
+    } catch {
+      await pool.end();
+    }
+  }
+});
+
+// Better Auth owns /api/auth/* (sign-up/in/out, OAuth callbacks).
+app.on(["GET", "POST"], "/api/auth/*", (c) => c.get("auth").handler(c.req.raw));
+
+app.use("/api/*", async (c, next) => {
+  if (c.req.path.startsWith("/api/auth/")) return next();
+  const session = await c.get("auth").api.getSession({
+    headers: c.req.raw.headers,
+  });
+  if (!session) return c.json({ error: "unauthorized" }, 401);
+  c.set("userId", session.user.id);
+  return next();
+});
+
+// ---------------------------------------------------------------------------
+// Validation
+// ---------------------------------------------------------------------------
+
+const STATUS = [
+  "lead",
+  "applied",
+  "screening",
+  "interviewing",
+  "offer",
+  "accepted",
+  "rejected",
+  "withdrawn",
+] as const;
+const EVENT_TYPE = [
+  "email",
+  "recruiter_call",
+  "interview",
+  "followup",
+  "meeting",
+  "note",
+] as const;
+
+// Treat "" (and missing) as NULL, mirroring the old pick() helper.
+const emptyToNull = <T extends z.ZodTypeAny>(schema: T) =>
+  z.preprocess(
+    (v) => (v === "" || v === undefined || v === null ? null : v),
+    schema.nullable(),
+  );
+const str = () => emptyToNull(z.string().trim()).optional();
+const longStr = () => emptyToNull(z.string()).optional();
+const int = () => emptyToNull(z.coerce.number().int()).optional();
+const refId = () => emptyToNull(z.coerce.number().int().positive()).optional();
+
+const positionCreate = z.object({
+  company: z.string().trim().min(1),
+  title: z.string().trim().min(1),
+  url: str(),
+  location: str(),
+  source: str(),
+  description: longStr(),
+  impressions: longStr(),
+  resumeId: refId(),
+  salaryMin: int(),
+  salaryMax: int(),
+  status: z.enum(STATUS).optional(),
+  appliedAt: str(),
+});
+
+const personCreate = z.object({
+  name: z.string().trim().min(1),
+  role: str(),
+  company: str(),
+  email: str(),
+  phone: str(),
+  linkedin: str(),
+  notes: longStr(),
+});
+
+const eventCreate = z.object({
+  positionId: refId(),
+  personId: refId(),
+  type: z.enum(EVENT_TYPE),
+  date: z.string().trim().min(1),
+  notes: longStr(),
+  feedback: longStr(),
+  outcome: longStr(),
+  followupOn: str(),
+});
+
+type BeforeSave = (
+  data: Record<string, unknown>,
+  existing?: Record<string, unknown>,
+) => void;
+
+// Stamp appliedAt the first time a position reaches "applied" or beyond.
+const stampApplied: BeforeSave = (data, existing) => {
+  const past = ["applied", "screening", "interviewing", "offer", "accepted"];
+  if (
+    typeof data.status === "string" &&
+    past.includes(data.status) &&
+    !data.appliedAt &&
+    !existing?.appliedAt
+  ) {
+    data.appliedAt = today();
+  }
+};
+
+const resources = {
+  positions: {
     table: positions,
-    fields: [
-      "company",
-      "title",
-      "url",
-      "location",
-      "source",
-      "description",
-      "impressions",
-      "resumeId",
-      "salaryMin",
-      "salaryMax",
-      "status",
-      "appliedAt",
-    ],
-    required: ["company", "title"],
-    beforeSave: (data, existing) => {
-      // Stamp the applied date the first time a position reaches "applied" or beyond.
-      const past = [
-        "applied",
-        "screening",
-        "interviewing",
-        "offer",
-        "accepted",
-      ];
-      if (
-        typeof data.status === "string" &&
-        past.includes(data.status) &&
-        !data.appliedAt &&
-        !existing?.appliedAt
-      ) {
-        data.appliedAt = today();
-      }
-    },
+    create: positionCreate,
+    update: positionCreate.partial(),
+    beforeSave: stampApplied,
   },
-  {
-    name: "people",
-    table: people,
-    fields: ["name", "role", "company", "email", "phone", "linkedin", "notes"],
-    required: ["name"],
-  },
-  {
-    name: "events",
-    table: events,
-    fields: [
-      "positionId",
-      "personId",
-      "type",
-      "date",
-      "notes",
-      "feedback",
-      "outcome",
-      "followupOn",
-    ],
-    required: ["type", "date"],
-  },
-];
+  people: { table: people, create: personCreate, update: personCreate.partial() },
+  events: { table: events, create: eventCreate, update: eventCreate.partial() },
+} as const;
 
-for (const { name, table, fields, required, beforeSave } of resources) {
-  const t = table as never as { id: never };
+// Columns present on every owned table; lets the generic loop scope queries
+// without per-operation casts on the query builder.
+type Owned = { id: AnyPgColumn; userId: AnyPgColumn };
 
-  app.get(`/api/${name}`, (c) => c.json(db.select().from(table).all()));
+for (const [name, cfg] of Object.entries(resources)) {
+  const table = cfg.table as PgTable;
+  const cols = table as unknown as Owned;
+  const beforeSave: BeforeSave | undefined = (
+    cfg as { beforeSave?: BeforeSave }
+  ).beforeSave;
+
+  app.get(`/api/${name}`, async (c) => {
+    const rows = await c
+      .get("db")
+      .select()
+      .from(table)
+      .where(eq(cols.userId, c.get("userId")));
+    return c.json(rows);
+  });
 
   app.post(`/api/${name}`, async (c) => {
-    const data = pick(await c.req.json(), fields);
-    for (const f of required) {
-      if (!data[f]) return c.json({ error: `${f} is required` }, 400);
-    }
+    const parsed = cfg.create.safeParse(await c.req.json());
+    if (!parsed.success) return c.json({ error: zerr(parsed.error) }, 400);
+    const data = clean({ ...parsed.data });
     beforeSave?.(data);
-    const row = db
+    data.userId = c.get("userId");
+    data.createdAt = today();
+    // Shape is validated above; the generic loop can't narrow the table union.
+    const [row] = await c
+      .get("db")
       .insert(table)
-      .values({ ...data, createdAt: today() } as never)
-      .returning()
-      .get();
+      .values(data as never)
+      .returning();
     return c.json(row, 201);
   });
 
   app.put(`/api/${name}/:id`, async (c) => {
-    const id = Number(c.req.param("id"));
-    const existing = db
-      .select()
-      .from(table)
-      .where(eq(t.id, id as never))
-      .get();
+    const id = parseId(c);
+    if (id === null) return c.json({ error: "invalid id" }, 400);
+    const uid = c.get("userId");
+    const db = c.get("db");
+    const scope = and(eq(cols.id, id), eq(cols.userId, uid));
+    const [existing] = await db.select().from(table).where(scope);
     if (!existing) return c.json({ error: "not found" }, 404);
-    const data = pick(await c.req.json(), fields);
+    const parsed = cfg.update.safeParse(await c.req.json());
+    if (!parsed.success) return c.json({ error: zerr(parsed.error) }, 400);
+    const data = clean({ ...parsed.data });
     beforeSave?.(data, existing as Record<string, unknown>);
-    const row = db
+    const [row] = await db
       .update(table)
-      .set(data)
-      .where(eq(t.id, id as never))
-      .returning()
-      .get();
+      .set(data as never)
+      .where(scope)
+      .returning();
     return c.json(row);
   });
 
-  app.delete(`/api/${name}/:id`, (c) => {
-    const id = Number(c.req.param("id"));
-    db.delete(table)
-      .where(eq(t.id, id as never))
-      .run();
+  app.delete(`/api/${name}/:id`, async (c) => {
+    const id = parseId(c);
+    if (id === null) return c.json({ error: "invalid id" }, 400);
+    const deleted = await c
+      .get("db")
+      .delete(table)
+      .where(and(eq(cols.id, id), eq(cols.userId, c.get("userId"))))
+      .returning();
+    if (deleted.length === 0) return c.json({ error: "not found" }, 404);
     return c.json({ ok: true });
   });
 }
 
-app.get("/api/resumes", (c) => c.json(db.select().from(resumes).all()));
+// ---------------------------------------------------------------------------
+// Resumes (R2-backed via the Storage interface)
+// ---------------------------------------------------------------------------
+
+app.get("/api/resumes", async (c) =>
+  c.json(
+    await c
+      .get("db")
+      .select()
+      .from(resumes)
+      .where(eq(resumes.userId, c.get("userId"))),
+  ),
+);
 
 app.post("/api/resumes", async (c) => {
+  const uid = c.get("userId");
+  const db = c.get("db");
   const body = await c.req.parseBody();
   const file = body.file;
-  if (!(file instanceof File))
-    return c.json({ error: "file is required" }, 400);
+  if (!(file instanceof File)) return c.json({ error: "file is required" }, 400);
   if (
     file.type !== "application/pdf" &&
     !file.name.toLowerCase().endsWith(".pdf")
@@ -154,91 +263,174 @@ app.post("/api/resumes", async (c) => {
   if (file.size > 15 * 1024 * 1024)
     return c.json({ error: "file too large (15 MB max)" }, 400);
 
-  const filename = `${Date.now()}-${file.name.replace(/[^\w.-]+/g, "_")}`;
-  fs.writeFileSync(
-    `data/resumes/${filename}`,
-    Buffer.from(await file.arrayBuffer()),
-  );
+  const owned = await db
+    .select()
+    .from(resumes)
+    .where(eq(resumes.userId, uid));
+  if (owned.length >= MAX_RESUMES)
+    return c.json({ error: `resume limit reached (${MAX_RESUMES} max)` }, 400);
+
+  const key = `${uid}/${crypto.randomUUID()}.pdf`;
+  await r2Storage(c.env.RESUMES).put(key, await file.arrayBuffer());
   const name =
     (typeof body.name === "string" && body.name.trim()) ||
     file.name.replace(/\.pdf$/i, "");
-  const row = db
+  const [row] = await db
     .insert(resumes)
-    .values({ name, filename, createdAt: today() })
-    .returning()
-    .get();
+    .values({ userId: uid, name, filename: key, createdAt: today() })
+    .returning();
   return c.json(row, 201);
 });
 
 app.put("/api/resumes/:id", async (c) => {
-  const id = Number(c.req.param("id"));
+  const id = parseId(c);
+  if (id === null) return c.json({ error: "invalid id" }, 400);
+  const uid = c.get("userId");
   const { name } = await c.req.json();
   if (typeof name !== "string" || !name.trim())
     return c.json({ error: "name is required" }, 400);
-  const row = db
+  const [row] = await c
+    .get("db")
     .update(resumes)
     .set({ name: name.trim() })
-    .where(eq(resumes.id, id))
-    .returning()
-    .get();
+    .where(and(eq(resumes.id, id), eq(resumes.userId, uid)))
+    .returning();
   if (!row) return c.json({ error: "not found" }, 404);
   return c.json(row);
 });
 
-app.get("/api/resumes/:id/file", (c) => {
-  const row = db
+app.get("/api/resumes/:id/file", async (c) => {
+  const id = parseId(c);
+  if (id === null) return c.json({ error: "invalid id" }, 400);
+  const uid = c.get("userId");
+  const [row] = await c
+    .get("db")
     .select()
     .from(resumes)
-    .where(eq(resumes.id, Number(c.req.param("id"))))
-    .get();
+    .where(and(eq(resumes.id, id), eq(resumes.userId, uid)));
   if (!row) return c.json({ error: "not found" }, 404);
-  const path = `data/resumes/${row.filename}`;
-  if (!fs.existsSync(path))
-    return c.json({ error: "file missing on disk" }, 404);
-  return c.body(new Uint8Array(fs.readFileSync(path)), 200, {
-    "Content-Type": "application/pdf",
-    "Content-Disposition": `inline; filename="${row.filename}"`,
+  const bytes = await r2Storage(c.env.RESUMES).get(row.filename);
+  if (!bytes) return c.json({ error: "file missing" }, 404);
+  // Static filename + nosniff: never echo the user-controlled name into headers.
+  return new Response(bytes as unknown as BodyInit, {
+    headers: {
+      "Content-Type": "application/pdf",
+      "Content-Disposition": 'inline; filename="resume.pdf"',
+      "X-Content-Type-Options": "nosniff",
+    },
   });
 });
 
-app.delete("/api/resumes/:id", (c) => {
-  const id = Number(c.req.param("id"));
-  const row = db.select().from(resumes).where(eq(resumes.id, id)).get();
-  if (row) {
-    db.delete(resumes).where(eq(resumes.id, id)).run();
-    fs.rmSync(`data/resumes/${row.filename}`, { force: true });
+app.delete("/api/resumes/:id", async (c) => {
+  const id = parseId(c);
+  if (id === null) return c.json({ error: "invalid id" }, 400);
+  const uid = c.get("userId");
+  const db = c.get("db");
+  const scope = and(eq(resumes.id, id), eq(resumes.userId, uid));
+  const [row] = await db.select().from(resumes).where(scope);
+  if (!row) return c.json({ error: "not found" }, 404);
+  // Remove the object first; if that fails, keep the row so they stay in sync.
+  try {
+    await r2Storage(c.env.RESUMES).delete(row.filename);
+  } catch {
+    return c.json({ error: "failed to delete file" }, 500);
   }
+  await db.delete(resumes).where(scope); // positions.resume_id ON DELETE SET NULL
   return c.json({ ok: true });
 });
 
-app.get("/api/goals", (c) =>
-  c.json(db.select().from(goals).where(eq(goals.id, 1)).get()),
-);
+// ---------------------------------------------------------------------------
+// Goals (one row per user, upserted)
+// ---------------------------------------------------------------------------
+
+const goalsDefault = (userId: string) => ({
+  userId,
+  weeklyApplications: 5,
+  salaryMin: null,
+  salaryMax: null,
+  targetRole: null,
+  targetDate: null,
+  notes: null,
+});
+
+const goalsSchema = z.object({
+  weeklyApplications: z.coerce.number().int().min(1).optional(),
+  salaryMin: int(),
+  salaryMax: int(),
+  targetRole: str(),
+  targetDate: str(),
+  notes: longStr(),
+});
+
+app.get("/api/goals", async (c) => {
+  const uid = c.get("userId");
+  const [row] = await c
+    .get("db")
+    .select()
+    .from(goals)
+    .where(eq(goals.userId, uid));
+  return c.json(row ?? goalsDefault(uid));
+});
 
 app.put("/api/goals", async (c) => {
-  const data = pick(await c.req.json(), [
-    "weeklyApplications",
-    "salaryMin",
-    "salaryMax",
-    "targetRole",
-    "targetDate",
-    "notes",
-  ]);
-  const row = db
-    .update(goals)
-    .set(data)
-    .where(eq(goals.id, 1))
-    .returning()
-    .get();
+  const uid = c.get("userId");
+  const parsed = goalsSchema.safeParse(await c.req.json());
+  if (!parsed.success) return c.json({ error: zerr(parsed.error) }, 400);
+  const data = clean({ ...parsed.data });
+  const db = c.get("db");
+  if (Object.keys(data).length === 0) {
+    const [row] = await db.select().from(goals).where(eq(goals.userId, uid));
+    return c.json(row ?? goalsDefault(uid));
+  }
+  const [row] = await db
+    .insert(goals)
+    .values({ userId: uid, ...data })
+    .onConflictDoUpdate({ target: goals.userId, set: data })
+    .returning();
   return c.json(row);
 });
 
-// In production, serve the built client from dist/.
-if (fs.existsSync("dist")) {
-  app.use("/*", serveStatic({ root: "./dist" }));
-  app.get("*", serveStatic({ path: "./dist/index.html" }));
-}
+// ---------------------------------------------------------------------------
+// Data export (own-your-data): all of the user's rows + their resume PDFs.
+// ---------------------------------------------------------------------------
 
-const port = Number(process.env.PORT) || 3001;
-serve({ fetch: app.fetch, port });
-console.log(`API listening on http://localhost:${port}`);
+app.get("/api/export", async (c) => {
+  const uid = c.get("userId");
+  const db = c.get("db");
+  const [pos, ppl, evs, res, gl] = await Promise.all([
+    db.select().from(positions).where(eq(positions.userId, uid)),
+    db.select().from(people).where(eq(people.userId, uid)),
+    db.select().from(events).where(eq(events.userId, uid)),
+    db.select().from(resumes).where(eq(resumes.userId, uid)),
+    db
+      .select()
+      .from(goals)
+      .where(eq(goals.userId, uid))
+      .then((r) => r[0] ?? null),
+  ]);
+  const files: Record<string, Uint8Array> = {
+    "data.json": strToU8(
+      JSON.stringify(
+        { positions: pos, people: ppl, events: evs, resumes: res, goals: gl },
+        null,
+        2,
+      ),
+    ),
+  };
+  const storage = r2Storage(c.env.RESUMES);
+  for (const r of res) {
+    const bytes = await storage.get(r.filename);
+    if (bytes) files[`resumes/${r.id}-${safeName(r.name)}.pdf`] = bytes;
+  }
+  return new Response(zipSync(files) as unknown as BodyInit, {
+    headers: {
+      "Content-Type": "application/zip",
+      "Content-Disposition": 'attachment; filename="apptracker-export.zip"',
+    },
+  });
+});
+
+// Everything else: the built React app (with SPA fallback via not_found_handling).
+app.all("*", (c) => c.env.ASSETS.fetch(c.req.raw));
+
+export default app;

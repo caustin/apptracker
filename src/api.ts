@@ -1,7 +1,7 @@
 import type { Db, Goals, Resume } from "./types";
 
 async function j<T>(url: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(url, init);
+  const res = await fetch(url, { credentials: "include", ...init });
   if (!res.ok) throw new Error(`${res.status}: ${await res.text()}`);
   return res.json();
 }

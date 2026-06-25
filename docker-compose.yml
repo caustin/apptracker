@@ -1,0 +1,34 @@
+# Local, fully-offline replacement for Neon. Postgres holds the data; the wsproxy
+# lets the @neondatabase/serverless WebSocket driver (used by the Worker) reach it
+# the same way it reaches Neon cloud in production.
+services:
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: main
+    ports:
+      - "5432:5432" # direct TCP for drizzle-kit migrate/generate
+    volumes:
+      - apptracker_pg:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d main"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  wsproxy:
+    image: ghcr.io/neondatabase/wsproxy:latest
+    environment:
+      APPEND_PORT: "postgres:5432" # forward every WS connection to Postgres
+      ALLOW_ADDR_REGEX: ".*"
+      LOG_TRAFFIC: "true"
+    ports:
+      - "4444:80" # neonConfig.wsProxy -> localhost:4444/v1
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+volumes:
+  apptracker_pg:

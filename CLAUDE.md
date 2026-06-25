@@ -1,34 +1,44 @@
 # AppTracker — notes for Claude
 
-Personal job-search tracker: positions, people (contacts), events (emails, calls, interviews, follow-ups), uploaded PDF resumes, goals, and a dashboard with a stage funnel.
+Multi-tenant job-search tracker: positions, people (contacts), events (emails, calls, interviews, follow-ups), uploaded PDF resumes, goals, and a dashboard with a stage funnel. Each user account is a private workspace — every application row carries a `user_id` and is scoped to the signed-in user.
 
 ## Stack
 
-- **Frontend:** Vite + React 19 + TypeScript, plain CSS (`src/styles.css`, CSS variables, light mode only). No router — tab state lives in `App.tsx`.
-- **Backend:** Hono on `@hono/node-server` (port 3001), Drizzle ORM over better-sqlite3 (synchronous API: `.all()` / `.get()` / `.run()`).
-- **Database:** SQLite at `data/apptracker.db`. No migration tooling — tables are created with `CREATE TABLE IF NOT EXISTS` in `server/db.ts`. A schema change means editing both the DDL there and the Drizzle schema in `server/schema.ts`. For columns added after first release, follow the existing pattern in `db.ts`: check `PRAGMA table_info` and `ALTER TABLE ADD COLUMN` if missing (the user has a live database — never require deleting it).
-- **Uploads:** resume PDFs live on disk in `data/resumes/` (timestamped sanitized filenames); the `resumes` table stores display name + filename. Served inline at `GET /api/resumes/:id/file`.
+- **Runtime:** Cloudflare Workers. One Worker serves the API (Hono) and the built React app (Workers Static Assets, SPA fallback). Entry is `server/index.ts` ending in `export default app`.
+- **Frontend:** Vite + React 19 + TypeScript, plain CSS (`src/styles.css`, CSS variables, light mode only). No router — tab state lives in `App.tsx`, synced to the URL hash.
+- **Backend:** Hono. Drizzle ORM over **Neon Postgres** via the `@neondatabase/serverless` **WebSocket** driver (`drizzle-orm/neon-serverless`). The API is fully **async** (`await db.select()…`). Bindings are request-scoped, so `db` and the Better Auth instance are built **per request** in middleware (`makeDb`, `makeAuth`) and the pool is closed via `executionCtx.waitUntil`.
+- **Auth:** Better Auth (email/password + Google) at `/api/auth/*`. A session-guard middleware on `/api/*` rejects unauthenticated requests with 401 and sets `c.get("userId")`; every query is scoped to it.
+- **Database:** Neon Postgres. Schema in `server/schema.ts`; migrations via **Drizzle Kit** in `drizzle/` (`npm run db:generate` / `db:migrate`) — never create tables at runtime. Locally, Postgres + a `wsproxy` run in Docker (`docker-compose.yml`) so the same serverless driver works offline; `makeDb` switches to the insecure local proxy when `DATABASE_URL` is localhost.
+- **Uploads:** resume PDFs live in **R2** (bucket binding `RESUMES`) behind the `Storage` interface in `server/storage.ts`. Object key is `<userId>/<uuid>.pdf`; the `resumes` row stores display name + that key. Served at `GET /api/resumes/:id/file` with a static `filename="resume.pdf"` + `nosniff` (never echo the user-controlled name).
+- **Config/secrets:** `wrangler.jsonc` (bindings). Secrets via `.dev.vars` locally / `wrangler secret put` in prod: `DATABASE_URL`, `BETTER_AUTH_SECRET`, `BETTER_AUTH_URL`, `GOOGLE_CLIENT_ID/SECRET`.
 
 ## Commands
 
-- `npm run dev` — API (tsx watch) + Vite dev server with `/api` proxy, via concurrently
-- `npm run build` — typecheck (`tsc --noEmit`) then `vite build`
-- `npm start` — serves the API and, if `dist/` exists, the built client
+- `docker compose up -d` — local Postgres (`:5432`, direct TCP for drizzle-kit) + wsproxy (`:4444`, WebSocket for the app)
+- `npm run dev` — Vite (`:5173`) + `wrangler dev` (`:8787`); Vite proxies `/api` to the Worker (same-origin → first-party cookies)
+- `npm run db:generate` / `npm run db:migrate` — Drizzle Kit migrations
+- `npm run build` — typecheck (`tsc --noEmit`) then `vite build` into `dist/`
+- `npm run deploy` — build then `wrangler deploy`
 - `npm run check` — typecheck only
 
 ## Layout
 
-- `server/index.ts` — all API routes. CRUD for positions/people/events is generated from the `resources` table (field whitelist + required fields + optional `beforeSave` hook). Resumes have hand-written routes (multipart upload via `c.req.parseBody()`, PDF-only, 15 MB cap). Goals is a single row (`id = 1`), GET/PUT only.
-- `server/schema.ts` — Drizzle table definitions (camelCase TS fields ↔ snake_case columns).
+- `server/index.ts` — all API routes. CRUD for positions/people/events is generated from the `resources` map (Zod create/update schemas + optional `beforeSave`); every route is async and user-scoped. Resumes/goals/export are hand-written. Ends with a catch-all serving the SPA via `env.ASSETS`.
+- `server/schema.ts` — Drizzle/pgTable definitions (camelCase TS ↔ snake_case columns), including Better Auth tables (`user`/`session`/`account`/`verification`) and `user_id` FKs.
+- `server/db.ts`, `server/auth.ts`, `server/storage.ts`, `server/env.ts` — per-request DB factory, Better Auth config, R2 storage impl + interface, and the `Env` bindings type.
 - `src/types.ts` — client-side copies of the row types plus shared constants (`STATUS_META`, `EVENT_META`) and formatters. **Kept in sync with `server/schema.ts` by hand** — update both when changing a table.
-- `src/App.tsx` — loads everything via `api.loadAll()` into one `Db` object; mutations call the API then `refresh()`. No client-side cache or state library.
-- `src/components/` — one file per tab (`Dashboard`, `Positions`, `People`, `Resumes`, `Goals`) plus `Funnel.tsx` (SVG). `Positions.tsx` also contains the detail view, position form, and event form.
+- `src/lib/auth-client.ts` — Better Auth React client (`useSession`, `signIn`, `signUp`, `signOut`).
+- `src/App.tsx` — gates on `useSession()` (login screen when signed out), loads everything via `api.loadAll()` into one `Db`; mutations call the API then `refresh()`. Tabs wrapped in `ErrorBoundary`. No client-side cache or state library.
+- `src/components/` — one file per tab (`Dashboard`, `Positions`, `People`, `Resumes`, `Goals`) plus `Funnel.tsx`, `Auth.tsx`, `ErrorBoundary.tsx`. `Positions.tsx` also contains the detail view, position form, and event form.
 
 ## Conventions
 
-- Dates are ISO `YYYY-MM-DD` strings end to end; compare them lexicographically. Money is whole dollars (integers).
+- Dates are ISO `YYYY-MM-DD` strings end to end; compare them lexicographically. Server `today()` uses UTC. Money is whole dollars (integers).
 - Position status flow: `lead → applied → screening → interviewing → offer → accepted`, with `rejected`/`withdrawn` as terminal side-exits (`order: -1` in `STATUS_META`). The funnel counts positions whose current status is at or past each stage.
-- The server stamps `appliedAt` the first time a position's status moves to `applied` or beyond (see the `beforeSave` hook).
-- Empty strings sent from forms are normalized to `NULL` in the API's `pick()` helper.
+- The server stamps `appliedAt` the first time a position's status moves to `applied` or beyond (`stampApplied` beforeSave). `status`/event `type` are validated against the allowed sets server-side (Zod).
+- Empty strings from forms are normalized to `NULL` (the `emptyToNull` Zod preprocessor); omitted keys are dropped so DB defaults apply.
+- IDs in routes are validated (`parseId` → 400 on non-numeric); generic DELETE returns 404 when nothing was scoped/deleted.
+- `goals` is one row per user (PK `user_id`), GET returns a default object when none exists, PUT upserts.
 - The event type is named `Interaction` on the client to avoid clashing with the DOM `Event` type.
-- `positions.resume_id` is `ON DELETE SET NULL` — deleting a resume unlinks it from positions rather than blocking. Deleting a resume also removes its PDF from disk.
+- `positions.resume_id` is `ON DELETE SET NULL` — deleting a resume unlinks it from positions. Resume delete removes the R2 object first (try/catch), then the row, so DB and storage stay in sync.
+- Resume storage goes through the `Storage` interface so a future "bring your own cloud" backend (e.g. Google Drive) can be added without touching routes.

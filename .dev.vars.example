@@ -1,0 +1,12 @@
+# Copy to .dev.vars (gitignored) for local `wrangler dev`.
+# DATABASE_URL points at the local Postgres; the app reaches it through the
+# wsproxy container (see docker-compose.yml), drizzle-kit connects directly.
+DATABASE_URL="postgres://postgres:postgres@localhost:5432/main"
+# Any random string >= 32 chars. Generate: openssl rand -base64 32
+BETTER_AUTH_SECRET="dev-only-secret-change-me-0000000000000000"
+BETTER_AUTH_URL="http://localhost:5173"
+# Optional locally — leave blank to develop with email/password only.
+# For Google sign-in, create an OAuth client with redirect:
+#   http://localhost:5173/api/auth/callback/google
+GOOGLE_CLIENT_ID=""
+GOOGLE_CLIENT_SECRET=""

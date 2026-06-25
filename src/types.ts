@@ -10,6 +10,7 @@ export type Status =
 
 export interface Position {
   id: number;
+  userId: string;
   company: string;
   title: string;
   url: string | null;
@@ -27,6 +28,7 @@ export interface Position {
 
 export interface Person {
   id: number;
+  userId: string;
   name: string;
   role: string | null;
   company: string | null;
@@ -47,6 +49,7 @@ export type EventType =
 
 export interface Interaction {
   id: number;
+  userId: string;
   positionId: number | null;
   personId: number | null;
   type: EventType;
@@ -60,13 +63,14 @@ export interface Interaction {
 
 export interface Resume {
   id: number;
+  userId: string;
   name: string;
   filename: string;
   createdAt: string;
 }
 
 export interface Goals {
-  id: number;
+  userId: string;
   weeklyApplications: number;
   salaryMin: number | null;
   salaryMax: number | null;

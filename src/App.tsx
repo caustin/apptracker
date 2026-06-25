@@ -1,6 +1,9 @@
 import { useCallback, useEffect, useState } from "react";
 import { api } from "./api";
 import type { Db } from "./types";
+import { useSession, signOut } from "./lib/auth-client";
+import { AuthScreen } from "./components/Auth";
+import { ErrorBoundary } from "./components/ErrorBoundary";
 import { Dashboard } from "./components/Dashboard";
 import { Positions } from "./components/Positions";
 import { People } from "./components/People";
@@ -21,12 +24,13 @@ function tabFromHash(hash: string): Tab {
 }
 
 export function App() {
+  const { data: session, isPending } = useSession();
   const [db, setDb] = useState<Db | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [tab, setTabState] = useState<Tab>(() => tabFromHash(location.hash));
   const setTab = (t: Tab) => {
     setTabState(t);
-    location.hash = t;
+    if (location.hash.replace(/^#/, "") !== t) location.hash = t;
   };
 
   useEffect(() => {
@@ -36,6 +40,7 @@ export function App() {
   }, []);
 
   const refresh = useCallback(() => {
+    if (!session) return;
     setError(null);
     api
       .loadAll()
@@ -43,10 +48,20 @@ export function App() {
         setDb(next);
         setError(null);
       })
-      .catch((e) => setError(String(e)));
-  }, []);
+      .catch((e) => {
+        setDb(null); // don't keep showing stale/partial data behind the banner
+        setError(String(e));
+      });
+  }, [session]);
 
-  useEffect(refresh, [refresh]);
+  // (Re)load whenever the signed-in user changes; clear data on sign-out.
+  useEffect(() => {
+    if (session) refresh();
+    else setDb(null);
+  }, [session, refresh]);
+
+  if (isPending) return <div className="loading">Loading…</div>;
+  if (!session) return <AuthScreen />;
 
   return (
     <div className="app">
@@ -68,6 +83,14 @@ export function App() {
               </button>
             ))}
           </nav>
+          <div className="topbar-actions">
+            <a className="btn" href="/api/export">
+              Export
+            </a>
+            <button className="btn" onClick={() => signOut()}>
+              Sign out
+            </button>
+          </div>
         </div>
       </header>
 
@@ -78,11 +101,15 @@ export function App() {
           </div>
         )}
         {!db && !error && <div className="loading">Loading…</div>}
-        {db && tab === "Dashboard" && <Dashboard db={db} onNavigate={setTab} />}
-        {db && tab === "Positions" && <Positions db={db} onChange={refresh} />}
-        {db && tab === "People" && <People db={db} onChange={refresh} />}
-        {db && tab === "Resumes" && <Resumes db={db} onChange={refresh} />}
-        {db && tab === "Goals" && <GoalsPage db={db} onChange={refresh} />}
+        {db && (
+          <ErrorBoundary key={tab}>
+            {tab === "Dashboard" && <Dashboard db={db} onNavigate={setTab} />}
+            {tab === "Positions" && <Positions db={db} onChange={refresh} />}
+            {tab === "People" && <People db={db} onChange={refresh} />}
+            {tab === "Resumes" && <Resumes db={db} onChange={refresh} />}
+            {tab === "Goals" && <GoalsPage db={db} onChange={refresh} />}
+          </ErrorBoundary>
+        )}
       </main>
     </div>
   );
