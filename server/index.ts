@@ -21,9 +21,9 @@ const today = () => new Date().toISOString().slice(0, 10); // UTC YYYY-MM-DD
 const MAX_RESUMES = 25; // per-user upload cap (keeps disk/quota bounded)
 // Hard ceiling on the total resume bytes pulled into a single /api/export
 // response. Workers isolates are capped at 128 MB and fflate's zipSync
-// materializes the whole archive in memory, so an unbounded export can OOM
-// the isolate (and impact other concurrent users on a reused isolate).
-const MAX_EXPORT_BYTES = 64 * 1024 * 1024; // 64 MB
+// materializes the whole archive in memory alongside the input files, so keep
+// the aggregate input well below the isolate limit.
+const MAX_EXPORT_BYTES = 32 * 1024 * 1024; // 32 MB
 
 // Strict Content-Security-Policy applied to HTML responses. Vite emits
 // separate JS/CSS asset files (no inline scripts/styles), so those stay
@@ -577,21 +577,19 @@ app.get("/api/export", async (c) => {
       .where(eq(goals.userId, uid))
       .then((r) => r[0] ?? null),
   ]);
-  const files: Record<string, Uint8Array> = {
-    "data.json": strToU8(
-      JSON.stringify(
-        { positions: pos, people: ppl, events: evs, resumes: res, goals: gl },
-        null,
-        2,
-      ),
+  const dataJson = strToU8(
+    JSON.stringify(
+      { positions: pos, people: ppl, events: evs, resumes: res, goals: gl },
+      null,
+      2,
     ),
-  };
+  );
+  const files: Record<string, Uint8Array> = { "data.json": dataJson };
   const storage = r2Storage(c.env.RESUMES);
   // Pull resume bytes in order, but stop (413) as soon as the running total
-  // would exceed the isolate-safe cap — zipSync materializes the whole
-  // archive in memory, so an unbounded set can OOM the Worker.
-  let total = 0;
-  const fetched: { path: string; bytes: Uint8Array }[] = [];
+  // would exceed the isolate-safe cap. The JSON payload counts too because it
+  // remains buffered while zipSync builds the final archive.
+  let total = dataJson.byteLength;
   for (const r of res) {
     const bytes = await storage.get(r.filename);
     if (!bytes) continue;
@@ -602,9 +600,8 @@ app.get("/api/export", async (c) => {
         413,
       );
     }
-    fetched.push({ path: `resumes/${r.id}-${safeName(r.name)}.pdf`, bytes });
+    files[`resumes/${r.id}-${safeName(r.name)}.pdf`] = bytes;
   }
-  for (const f of fetched) files[f.path] = f.bytes;
   return new Response(zipSync(files) as unknown as BodyInit, {
     headers: {
       "Content-Type": "application/zip",

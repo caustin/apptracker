@@ -9,6 +9,11 @@ import { user, session, account, verification } from "./schema";
 // rotating it (which would expose the session signing key).
 const KNOWN_PLACEHOLDER_SECRET =
   "dev-only-secret-change-me-0000000000000000";
+const LOCAL_AUTH_HOSTS = new Set(["localhost", "127.0.0.1", "0.0.0.0", "::1"]);
+
+function isLocalAuthHost(hostname: string) {
+  return LOCAL_AUTH_HOSTS.has(hostname) || hostname.endsWith(".localhost");
+}
 
 // Workers bindings only exist per-request, so the auth instance is built
 // per-request from env rather than as a module singleton. Google is only
@@ -24,7 +29,14 @@ export function makeAuth(env: Env, db: DB) {
   } catch {
     throw new Error("BETTER_AUTH_URL is missing or not a valid URL");
   }
-  const isProd = baseURL.protocol === "https:";
+  if (baseURL.protocol !== "http:" && baseURL.protocol !== "https:") {
+    throw new Error("BETTER_AUTH_URL must be an http(s) URL");
+  }
+  const isLocalDev = isLocalAuthHost(baseURL.hostname);
+  const isProd = !isLocalDev;
+  if (isProd && baseURL.protocol !== "https:") {
+    throw new Error("BETTER_AUTH_URL must be https:// in production");
+  }
   // Fail closed on a missing/placeholder session secret in production. In
   // dev any non-empty value is allowed so local setup still works.
   if (isProd) {
