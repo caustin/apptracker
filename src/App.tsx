@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { api } from "./api";
 import type { Db } from "./types";
 import { useSession, signOut } from "./lib/auth-client";
@@ -28,6 +28,8 @@ export function App() {
   const [db, setDb] = useState<Db | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [tab, setTabState] = useState<Tab>(() => tabFromHash(location.hash));
+  const sessionRef = useRef(session);
+  sessionRef.current = session;
   const setTab = (t: Tab) => {
     setTabState(t);
     if (location.hash.replace(/^#/, "") !== t) location.hash = t;
@@ -41,14 +43,17 @@ export function App() {
 
   const refresh = useCallback(() => {
     if (!session) return;
+    const current = session;
     setError(null);
     api
       .loadAll()
       .then((next) => {
+        if (sessionRef.current !== current) return; // session changed mid-flight
         setDb(next);
         setError(null);
       })
       .catch((e) => {
+        if (sessionRef.current !== current) return;
         setDb(null); // don't keep showing stale/partial data behind the banner
         setError(String(e));
       });

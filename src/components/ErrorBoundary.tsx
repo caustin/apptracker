@@ -17,6 +17,7 @@ export class ErrorBoundary extends Component<
         <div className="error-banner">
           Something went wrong rendering this view — {this.state.error.message}
           <button
+            type="button"
             className="btn"
             style={{ marginLeft: 12 }}
             onClick={() => this.setState({ error: null })}

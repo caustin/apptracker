@@ -4,15 +4,17 @@ import type { R2Bucket } from "./env";
 // future "bring your own cloud" backend (e.g. Google Drive via drive.file scope)
 // can be slotted in without touching route code.
 export interface Storage {
-  put(key: string, bytes: ArrayBuffer | Uint8Array): Promise<void>;
+  put(userId: string, bytes: ArrayBuffer | Uint8Array): Promise<string>;
   get(key: string): Promise<Uint8Array | null>;
   delete(key: string): Promise<void>;
 }
 
 export function r2Storage(bucket: R2Bucket): Storage {
   return {
-    async put(key, bytes) {
+    async put(userId, bytes) {
+      const key = `${userId}/${crypto.randomUUID()}.pdf`;
       await bucket.put(key, bytes);
+      return key;
     },
     async get(key) {
       const obj = await bucket.get(key);

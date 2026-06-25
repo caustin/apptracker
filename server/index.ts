@@ -12,7 +12,10 @@ import { positions, people, events, goals, resumes } from "./schema";
 type Variables = { db: DB; auth: Auth; userId: string };
 const app = new Hono<{ Bindings: Env; Variables: Variables }>();
 
-app.onError((err, c) => c.json({ error: err.message }, 500));
+app.onError((err, c) => {
+  console.error(err);
+  return c.json({ error: "internal server error" }, 500);
+});
 
 const today = () => new Date().toISOString().slice(0, 10); // UTC YYYY-MM-DD
 const MAX_RESUMES = 25; // per-user upload cap (keeps disk/quota bounded)
@@ -24,6 +27,17 @@ function parseId(c: { req: { param: (k: string) => string } }): number | null {
 
 const zerr = (e: z.ZodError) =>
   e.issues.map((i) => `${i.path.join(".") || "body"}: ${i.message}`).join("; ");
+
+// c.req.json() throws on malformed/empty bodies; return a sentinel so handlers
+// can respond with 400 instead of letting it bubble to onError as a 500.
+const BAD_JSON = Symbol("bad-json");
+async function readJson(c: { req: { json: () => Promise<unknown> } }) {
+  try {
+    return await c.req.json();
+  } catch {
+    return BAD_JSON;
+  }
+}
 
 // Drop keys the client omitted so DB column defaults (e.g. status='lead') apply.
 function clean(obj: Record<string, unknown>) {
@@ -141,6 +155,15 @@ type BeforeSave = (
   existing?: Record<string, unknown>,
 ) => void;
 
+// Verify linked rows (resumeId, positionId, personId) belong to the current
+// user, so a request can't cross-link another tenant's data. Returns an error
+// string on failure, null when OK.
+type VerifyRefs = (
+  db: DB,
+  data: Record<string, unknown>,
+  uid: string,
+) => Promise<string | null>;
+
 // Stamp appliedAt the first time a position reaches "applied" or beyond.
 const stampApplied: BeforeSave = (data, existing) => {
   const past = ["applied", "screening", "interviewing", "offer", "accepted"];
@@ -154,15 +177,52 @@ const stampApplied: BeforeSave = (data, existing) => {
   }
 };
 
+const verifyPositionRefs: VerifyRefs = async (db, data, uid) => {
+  if (data.resumeId != null) {
+    const [r] = await db
+      .select({ id: resumes.id })
+      .from(resumes)
+      .where(and(eq(resumes.id, data.resumeId as number), eq(resumes.userId, uid)));
+    if (!r) return "resume not found";
+  }
+  return null;
+};
+
+const verifyEventRefs: VerifyRefs = async (db, data, uid) => {
+  if (data.positionId != null) {
+    const [p] = await db
+      .select({ id: positions.id })
+      .from(positions)
+      .where(
+        and(eq(positions.id, data.positionId as number), eq(positions.userId, uid)),
+      );
+    if (!p) return "position not found";
+  }
+  if (data.personId != null) {
+    const [p] = await db
+      .select({ id: people.id })
+      .from(people)
+      .where(and(eq(people.id, data.personId as number), eq(people.userId, uid)));
+    if (!p) return "person not found";
+  }
+  return null;
+};
+
 const resources = {
   positions: {
     table: positions,
     create: positionCreate,
     update: positionCreate.partial(),
     beforeSave: stampApplied,
+    verifyRefs: verifyPositionRefs,
   },
   people: { table: people, create: personCreate, update: personCreate.partial() },
-  events: { table: events, create: eventCreate, update: eventCreate.partial() },
+  events: {
+    table: events,
+    create: eventCreate,
+    update: eventCreate.partial(),
+    verifyRefs: verifyEventRefs,
+  },
 } as const;
 
 // Columns present on every owned table; lets the generic loop scope queries
@@ -175,6 +235,9 @@ for (const [name, cfg] of Object.entries(resources)) {
   const beforeSave: BeforeSave | undefined = (
     cfg as { beforeSave?: BeforeSave }
   ).beforeSave;
+  const verifyRefs: VerifyRefs | undefined = (
+    cfg as { verifyRefs?: VerifyRefs }
+  ).verifyRefs;
 
   app.get(`/api/${name}`, async (c) => {
     const rows = await c
@@ -186,11 +249,16 @@ for (const [name, cfg] of Object.entries(resources)) {
   });
 
   app.post(`/api/${name}`, async (c) => {
-    const parsed = cfg.create.safeParse(await c.req.json());
+    const json = await readJson(c);
+    if (json === BAD_JSON) return c.json({ error: "invalid JSON body" }, 400);
+    const parsed = cfg.create.safeParse(json);
     if (!parsed.success) return c.json({ error: zerr(parsed.error) }, 400);
+    const uid = c.get("userId");
     const data = clean({ ...parsed.data });
     beforeSave?.(data);
-    data.userId = c.get("userId");
+    const refErr = verifyRefs ? await verifyRefs(c.get("db"), data, uid) : null;
+    if (refErr) return c.json({ error: refErr }, 400);
+    data.userId = uid;
     data.createdAt = today();
     // Shape is validated above; the generic loop can't narrow the table union.
     const [row] = await c
@@ -209,10 +277,15 @@ for (const [name, cfg] of Object.entries(resources)) {
     const scope = and(eq(cols.id, id), eq(cols.userId, uid));
     const [existing] = await db.select().from(table).where(scope);
     if (!existing) return c.json({ error: "not found" }, 404);
-    const parsed = cfg.update.safeParse(await c.req.json());
+    const json = await readJson(c);
+    if (json === BAD_JSON) return c.json({ error: "invalid JSON body" }, 400);
+    const parsed = cfg.update.safeParse(json);
     if (!parsed.success) return c.json({ error: zerr(parsed.error) }, 400);
     const data = clean({ ...parsed.data });
     beforeSave?.(data, existing as Record<string, unknown>);
+    const refErr = verifyRefs ? await verifyRefs(db, data, uid) : null;
+    if (refErr) return c.json({ error: refErr }, 400);
+    if (Object.keys(data).length === 0) return c.json(existing);
     const [row] = await db
       .update(table)
       .set(data as never)
@@ -270,23 +343,31 @@ app.post("/api/resumes", async (c) => {
   if (owned.length >= MAX_RESUMES)
     return c.json({ error: `resume limit reached (${MAX_RESUMES} max)` }, 400);
 
-  const key = `${uid}/${crypto.randomUUID()}.pdf`;
-  await r2Storage(c.env.RESUMES).put(key, await file.arrayBuffer());
+  const key = await r2Storage(c.env.RESUMES).put(uid, await file.arrayBuffer());
   const name =
     (typeof body.name === "string" && body.name.trim()) ||
     file.name.replace(/\.pdf$/i, "");
-  const [row] = await db
-    .insert(resumes)
-    .values({ userId: uid, name, filename: key, createdAt: today() })
-    .returning();
-  return c.json(row, 201);
+  try {
+    const [row] = await db
+      .insert(resumes)
+      .values({ userId: uid, name, filename: key, createdAt: today() })
+      .returning();
+    return c.json(row, 201);
+  } catch (err) {
+    // Compensating cleanup: remove the orphaned R2 object if the DB insert
+    // fails, so storage and the resumes table stay consistent.
+    await r2Storage(c.env.RESUMES).delete(key).catch(() => {});
+    throw err;
+  }
 });
 
 app.put("/api/resumes/:id", async (c) => {
   const id = parseId(c);
   if (id === null) return c.json({ error: "invalid id" }, 400);
   const uid = c.get("userId");
-  const { name } = await c.req.json();
+  const json = await readJson(c);
+  if (json === BAD_JSON) return c.json({ error: "invalid JSON body" }, 400);
+  const { name } = json as { name?: string };
   if (typeof name !== "string" || !name.trim())
     return c.json({ error: "name is required" }, 400);
   const [row] = await c
@@ -374,7 +455,9 @@ app.get("/api/goals", async (c) => {
 
 app.put("/api/goals", async (c) => {
   const uid = c.get("userId");
-  const parsed = goalsSchema.safeParse(await c.req.json());
+  const json = await readJson(c);
+  if (json === BAD_JSON) return c.json({ error: "invalid JSON body" }, 400);
+  const parsed = goalsSchema.safeParse(json);
   if (!parsed.success) return c.json({ error: zerr(parsed.error) }, 400);
   const data = clean({ ...parsed.data });
   const db = c.get("db");

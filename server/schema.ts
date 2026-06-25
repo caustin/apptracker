@@ -5,6 +5,7 @@ import {
   integer,
   boolean,
   timestamp,
+  index,
 } from "drizzle-orm/pg-core";
 
 // ---------------------------------------------------------------------------
@@ -67,73 +68,89 @@ export const verification = pgTable("verification", {
 // ISO YYYY-MM-DD text and money is whole-dollar integers, as before.
 // ---------------------------------------------------------------------------
 
-export const resumes = pgTable("resumes", {
-  id: serial("id").primaryKey(),
-  userId: text("user_id")
-    .notNull()
-    .references(() => user.id, { onDelete: "cascade" }),
-  name: text("name").notNull(),
-  // R2 object key (e.g. "<userId>/<uuid>.pdf"); never shown to the browser.
-  filename: text("filename").notNull(),
-  createdAt: text("created_at").notNull(),
-});
+export const resumes = pgTable(
+  "resumes",
+  {
+    id: serial("id").primaryKey(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    // R2 object key (e.g. "<userId>/<uuid>.pdf"); never shown to the browser.
+    filename: text("filename").notNull(),
+    createdAt: text("created_at").notNull(),
+  },
+  (t) => [index("resumes_user_id_idx").on(t.userId)],
+);
 
-export const positions = pgTable("positions", {
-  id: serial("id").primaryKey(),
-  userId: text("user_id")
-    .notNull()
-    .references(() => user.id, { onDelete: "cascade" }),
-  company: text("company").notNull(),
-  title: text("title").notNull(),
-  url: text("url"),
-  location: text("location"),
-  source: text("source"),
-  description: text("description"),
-  impressions: text("impressions"),
-  resumeId: integer("resume_id").references(() => resumes.id, {
-    onDelete: "set null",
-  }),
-  salaryMin: integer("salary_min"),
-  salaryMax: integer("salary_max"),
-  status: text("status").notNull().default("lead"),
-  appliedAt: text("applied_at"),
-  createdAt: text("created_at").notNull(),
-});
+export const positions = pgTable(
+  "positions",
+  {
+    id: serial("id").primaryKey(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    company: text("company").notNull(),
+    title: text("title").notNull(),
+    url: text("url"),
+    location: text("location"),
+    source: text("source"),
+    description: text("description"),
+    impressions: text("impressions"),
+    resumeId: integer("resume_id").references(() => resumes.id, {
+      onDelete: "set null",
+    }),
+    salaryMin: integer("salary_min"),
+    salaryMax: integer("salary_max"),
+    status: text("status").notNull().default("lead"),
+    appliedAt: text("applied_at"),
+    createdAt: text("created_at").notNull(),
+  },
+  (t) => [index("positions_user_id_idx").on(t.userId)],
+);
 
-export const people = pgTable("people", {
-  id: serial("id").primaryKey(),
-  userId: text("user_id")
-    .notNull()
-    .references(() => user.id, { onDelete: "cascade" }),
-  name: text("name").notNull(),
-  role: text("role"),
-  company: text("company"),
-  email: text("email"),
-  phone: text("phone"),
-  linkedin: text("linkedin"),
-  notes: text("notes"),
-  createdAt: text("created_at").notNull(),
-});
+export const people = pgTable(
+  "people",
+  {
+    id: serial("id").primaryKey(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    role: text("role"),
+    company: text("company"),
+    email: text("email"),
+    phone: text("phone"),
+    linkedin: text("linkedin"),
+    notes: text("notes"),
+    createdAt: text("created_at").notNull(),
+  },
+  (t) => [index("people_user_id_idx").on(t.userId)],
+);
 
-export const events = pgTable("events", {
-  id: serial("id").primaryKey(),
-  userId: text("user_id")
-    .notNull()
-    .references(() => user.id, { onDelete: "cascade" }),
-  positionId: integer("position_id").references(() => positions.id, {
-    onDelete: "cascade",
-  }),
-  personId: integer("person_id").references(() => people.id, {
-    onDelete: "set null",
-  }),
-  type: text("type").notNull(),
-  date: text("date").notNull(),
-  notes: text("notes"),
-  feedback: text("feedback"),
-  outcome: text("outcome"),
-  followupOn: text("followup_on"),
-  createdAt: text("created_at").notNull(),
-});
+export const events = pgTable(
+  "events",
+  {
+    id: serial("id").primaryKey(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    positionId: integer("position_id").references(() => positions.id, {
+      onDelete: "cascade",
+    }),
+    personId: integer("person_id").references(() => people.id, {
+      onDelete: "set null",
+    }),
+    type: text("type").notNull(),
+    date: text("date").notNull(),
+    notes: text("notes"),
+    feedback: text("feedback"),
+    outcome: text("outcome"),
+    followupOn: text("followup_on"),
+    createdAt: text("created_at").notNull(),
+  },
+  (t) => [index("events_user_id_idx").on(t.userId)],
+);
 
 // One row per user (userId is the primary key), replacing the old id=1 singleton.
 export const goals = pgTable("goals", {

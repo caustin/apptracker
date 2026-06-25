@@ -28,8 +28,15 @@ export function AuthScreen() {
 
   const google = async () => {
     setError(null);
-    const res = await signIn.social({ provider: "google", callbackURL: "/" });
-    if (res?.error) setError(res.error.message || "Google sign-in failed");
+    setBusy(true);
+    try {
+      const res = await signIn.social({ provider: "google", callbackURL: "/" });
+      if (res?.error) setError(res.error.message || "Google sign-in failed");
+    } catch (err) {
+      setError(String(err));
+    } finally {
+      setBusy(false);
+    }
   };
 
   return (
