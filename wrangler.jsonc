@@ -1,0 +1,26 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "apptracker",
+  "main": "server/index.ts",
+  "compatibility_date": "2025-06-01",
+  "compatibility_flags": ["nodejs_compat"],
+  // Serves the built React app from dist/. SPA fallback returns index.html for
+  // client routes; /api/* falls through to the Worker (no matching asset).
+  "assets": {
+    "directory": "./dist",
+    "binding": "ASSETS",
+    "not_found_handling": "single-page-application"
+  },
+  "r2_buckets": [
+    {
+      "binding": "RESUMES",
+      "bucket_name": "apptracker-resumes"
+    }
+  ],
+  "observability": {
+    "enabled": true
+  }
+  // Secrets (set via `wrangler secret put` for prod, .dev.vars for local):
+  //   DATABASE_URL, BETTER_AUTH_SECRET, BETTER_AUTH_URL,
+  //   GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET
+}
