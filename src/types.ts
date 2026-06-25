@@ -89,6 +89,22 @@ export interface Db {
 
 export const resumeFileUrl = (id: number) => `/api/resumes/${id}/file`;
 
+// Defense-in-depth for href sinks: only return the URL if it parses to an
+// http(s) URL, otherwise undefined (caller renders plain text). The server
+// already rejects non-http(s) schemes, but this stops any legacy/leaked row
+// or future bypass from becoming a javascript:/data: XSS in the app origin.
+export function safeHttpHref(u: string | null | undefined): string | undefined {
+  if (!u) return undefined;
+  try {
+    const parsed = new URL(u);
+    // Return the serialized form so the value rendered to the DOM is exactly
+    // what was validated (strips tolerated whitespace/control chars).
+    return /^https?:$/i.test(parsed.protocol) ? parsed.href : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 export const STATUS_META: Record<Status, { label: string; order: number }> = {
   lead: { label: "Lead", order: 0 },
   applied: { label: "Applied", order: 1 },

@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { api } from "../api";
 import type { Db, Person } from "../types";
-import { EVENT_META, fmtDate } from "../types";
+import { EVENT_META, fmtDate, safeHttpHref } from "../types";
 
 const BLANK = {
   name: "",
@@ -62,9 +62,13 @@ export function People({ db, onChange }: { db: Db; onChange: () => void }) {
                 {p.email && <a href={`mailto:${p.email}`}>{p.email}</a>}
                 {p.phone && <span>{p.phone}</span>}
                 {p.linkedin && (
-                  <a href={p.linkedin} target="_blank" rel="noreferrer">
-                    LinkedIn ↗
-                  </a>
+                  safeHttpHref(p.linkedin) ? (
+                    <a href={safeHttpHref(p.linkedin)} target="_blank" rel="noreferrer">
+                      LinkedIn ↗
+                    </a>
+                  ) : (
+                    <span>{p.linkedin}</span>
+                  )
                 )}
               </div>
               {p.notes && <p className="prose">{p.notes}</p>}

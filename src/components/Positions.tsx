@@ -16,6 +16,7 @@ import {
   fmtDate,
   fmtRange,
   resumeFileUrl,
+  safeHttpHref,
   today,
 } from "../types";
 
@@ -383,14 +384,18 @@ function PositionDetail({
         {position.url && (
           <div className="fact">
             <div className="fact-label">Posting</div>
-            <a
-              className="fact-value"
-              href={position.url}
-              target="_blank"
-              rel="noreferrer"
-            >
-              link ↗
-            </a>
+            {safeHttpHref(position.url) ? (
+              <a
+                className="fact-value"
+                href={safeHttpHref(position.url)}
+                target="_blank"
+                rel="noreferrer"
+              >
+                link ↗
+              </a>
+            ) : (
+              <span className="fact-value">{position.url}</span>
+            )}
           </div>
         )}
       </div>

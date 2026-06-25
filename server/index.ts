@@ -19,6 +19,106 @@ app.onError((err, c) => {
 
 const today = () => new Date().toISOString().slice(0, 10); // UTC YYYY-MM-DD
 const MAX_RESUMES = 25; // per-user upload cap (keeps disk/quota bounded)
+// Hard ceiling on the total resume bytes pulled into a single /api/export
+// response. Workers isolates are capped at 128 MB and fflate's zipSync
+// materializes the whole archive in memory, so an unbounded export can OOM
+// the isolate (and impact other concurrent users on a reused isolate).
+const MAX_EXPORT_BYTES = 64 * 1024 * 1024; // 64 MB
+
+// Strict Content-Security-Policy applied to HTML responses. Vite emits
+// separate JS/CSS asset files (no inline scripts/styles), so those stay
+// 'self'. The only third-party host is Google Fonts (loaded via <link> in
+// index.html): style-src allows the stylesheet, font-src allows the WOFF2
+// files, and connect-src 'self' keeps preconnect bounded. object-src 'none'
+// blocks in-origin plugin/PDF-script execution (see resume serving), and
+// frame-ancestors 'none' stops clickjacking.
+const CSP =
+  "default-src 'self'; script-src 'self'; style-src 'self' https://fonts.googleapis.com; img-src 'self' data:; font-src 'self' https://fonts.gstatic.com; connect-src 'self'; object-src 'none'; base-uri 'self'; frame-src 'none'; frame-ancestors 'none'; form-action 'self'";
+
+function securityHeaders(res: Response): Response {
+  const headers = new Headers(res.headers);
+  headers.set("X-Content-Type-Options", "nosniff");
+  headers.set("Referrer-Policy", "strict-origin-when-cross-origin");
+  headers.set("X-Frame-Options", "DENY");
+  headers.set("Permissions-Policy", "camera=(), microphone=(), geolocation=()");
+  const ct = headers.get("Content-Type") || "";
+  if (ct.includes("text/html")) headers.set("Content-Security-Policy", CSP);
+  return new Response(res.body, {
+    status: res.status,
+    statusText: res.statusText,
+    headers,
+  });
+}
+
+// Defense-in-depth CSRF check on mutating /api/* routes (excludes Better
+// Auth's own /api/auth/* which manages its own CSRF). SameSite=Lax already
+// blocks cross-site credentialed requests, but asserting the Origin/Referer
+// matches the app origin guards against a future SameSite=None change. The
+// Vite dev proxy keeps /api same-origin from the browser's perspective, so
+// same-origin requests carry the expected Origin.
+const MUTATING = new Set(["POST", "PUT", "PATCH", "DELETE"]);
+function originOk(env: Env, headers: Headers): boolean {
+  let expected: string;
+  try {
+    expected = new URL(env.BETTER_AUTH_URL).origin;
+  } catch {
+    // Misconfigured URL is a separate failure (makeAuth throws on this), but
+    // fail closed here too so a malformed URL never widens the CSRF surface.
+    return false;
+  }
+  const origin = headers.get("origin");
+  const referer = headers.get("referer");
+  let actual: string | null = origin;
+  if (!actual && referer) {
+    try {
+      actual = new URL(referer).origin;
+    } catch {
+      actual = null;
+    }
+  }
+  if (!actual) return false; // missing both → reject
+  return actual === expected;
+}
+
+// Apply security headers to every response (HTML + JSON + file downloads).
+app.use("*", async (c, next) => {
+  await next();
+  c.res = securityHeaders(c.res);
+});
+
+app.use("/api/*", async (c, next) => {
+  const { db, pool } = makeDb(c.env.DATABASE_URL);
+  c.set("db", db);
+  try {
+    // makeAuth can throw (fail-closed on a bad secret/URL); build it inside
+    // the try so the finally still closes the Neon pool and doesn't leak a
+    // WebSocket connection on a misconfigured deploy.
+    c.set("auth", makeAuth(c.env, db));
+    await next();
+  } finally {
+    try {
+      c.executionCtx.waitUntil(pool.end());
+    } catch {
+      await pool.end();
+    }
+  }
+});
+
+// Better Auth owns /api/auth/* (sign-up/in/out, OAuth callbacks).
+app.on(["GET", "POST"], "/api/auth/*", (c) => c.get("auth").handler(c.req.raw));
+
+app.use("/api/*", async (c, next) => {
+  if (c.req.path.startsWith("/api/auth/")) return next();
+  // CSRF defense-in-depth on mutations (see originOk above).
+  if (MUTATING.has(c.req.method) && !originOk(c.env, c.req.raw.headers))
+    return c.json({ error: "origin not allowed" }, 403);
+  const session = await c.get("auth").api.getSession({
+    headers: c.req.raw.headers,
+  });
+  if (!session) return c.json({ error: "unauthorized" }, 401);
+  c.set("userId", session.user.id);
+  return next();
+});
 
 function parseId(c: { req: { param: (k: string) => string } }): number | null {
   const n = Number(c.req.param("id"));
@@ -46,39 +146,6 @@ function clean(obj: Record<string, unknown>) {
 }
 
 const safeName = (s: string) => s.replace(/[^\w.-]+/g, "_").slice(0, 80) || "resume";
-
-// ---------------------------------------------------------------------------
-// Per-request DB + auth (Workers bindings are request-scoped), then a session
-// guard that scopes everything to the signed-in user.
-// ---------------------------------------------------------------------------
-
-app.use("/api/*", async (c, next) => {
-  const { db, pool } = makeDb(c.env.DATABASE_URL);
-  c.set("db", db);
-  c.set("auth", makeAuth(c.env, db));
-  try {
-    await next();
-  } finally {
-    try {
-      c.executionCtx.waitUntil(pool.end());
-    } catch {
-      await pool.end();
-    }
-  }
-});
-
-// Better Auth owns /api/auth/* (sign-up/in/out, OAuth callbacks).
-app.on(["GET", "POST"], "/api/auth/*", (c) => c.get("auth").handler(c.req.raw));
-
-app.use("/api/*", async (c, next) => {
-  if (c.req.path.startsWith("/api/auth/")) return next();
-  const session = await c.get("auth").api.getSession({
-    headers: c.req.raw.headers,
-  });
-  if (!session) return c.json({ error: "unauthorized" }, 401);
-  c.set("userId", session.user.id);
-  return next();
-});
 
 // ---------------------------------------------------------------------------
 // Validation
@@ -114,10 +181,24 @@ const longStr = () => emptyToNull(z.string()).optional();
 const int = () => emptyToNull(z.coerce.number().int()).optional();
 const refId = () => emptyToNull(z.coerce.number().int().positive()).optional();
 
+// Free-text URL fields are rendered as <a href> on the client, so reject
+// dangerous schemes (javascript:, data:, vbscript:) at the schema layer.
+// Empty/missing stays NULL via emptyToNull.
+const httpUrl = () =>
+  emptyToNull(
+    z
+      .string()
+      .trim()
+      .url()
+      .refine((s) => /^https?:$/i.test(new URL(s).protocol), {
+        message: "url must be http or https",
+      }),
+  ).optional();
+
 const positionCreate = z.object({
   company: z.string().trim().min(1),
   title: z.string().trim().min(1),
-  url: str(),
+  url: httpUrl(),
   location: str(),
   source: str(),
   description: longStr(),
@@ -135,7 +216,7 @@ const personCreate = z.object({
   company: str(),
   email: str(),
   phone: str(),
-  linkedin: str(),
+  linkedin: httpUrl(),
   notes: longStr(),
 });
 
@@ -395,10 +476,13 @@ app.get("/api/resumes/:id/file", async (c) => {
   const bytes = await r2Storage(c.env.RESUMES).get(row.filename);
   if (!bytes) return c.json({ error: "file missing" }, 404);
   // Static filename + nosniff: never echo the user-controlled name into headers.
+  // Served as an attachment (not inline) so a malicious PDF's embedded JS
+  // cannot execute in the app origin; the strict CSP also sets object-src
+  // 'none' as defense in depth.
   return new Response(bytes as unknown as BodyInit, {
     headers: {
       "Content-Type": "application/pdf",
-      "Content-Disposition": 'inline; filename="resume.pdf"',
+      "Content-Disposition": 'attachment; filename="resume.pdf"',
       "X-Content-Type-Options": "nosniff",
     },
   });
@@ -503,10 +587,24 @@ app.get("/api/export", async (c) => {
     ),
   };
   const storage = r2Storage(c.env.RESUMES);
+  // Pull resume bytes in order, but stop (413) as soon as the running total
+  // would exceed the isolate-safe cap — zipSync materializes the whole
+  // archive in memory, so an unbounded set can OOM the Worker.
+  let total = 0;
+  const fetched: { path: string; bytes: Uint8Array }[] = [];
   for (const r of res) {
     const bytes = await storage.get(r.filename);
-    if (bytes) files[`resumes/${r.id}-${safeName(r.name)}.pdf`] = bytes;
+    if (!bytes) continue;
+    total += bytes.byteLength;
+    if (total > MAX_EXPORT_BYTES) {
+      return c.json(
+        { error: "export too large; remove some resumes and try again" },
+        413,
+      );
+    }
+    fetched.push({ path: `resumes/${r.id}-${safeName(r.name)}.pdf`, bytes });
   }
+  for (const f of fetched) files[f.path] = f.bytes;
   return new Response(zipSync(files) as unknown as BodyInit, {
     headers: {
       "Content-Type": "application/zip",
@@ -514,6 +612,11 @@ app.get("/api/export", async (c) => {
     },
   });
 });
+
+// Unknown /api/* routes return JSON 404 instead of falling through to the
+// SPA (which would leak the app shell to unauthenticated probes and return
+// HTML where API clients expect JSON).
+app.all("/api/*", (c) => c.json({ error: "not found" }, 404));
 
 // Everything else: the built React app (with SPA fallback via not_found_handling).
 app.all("*", (c) => c.env.ASSETS.fetch(c.req.raw));
