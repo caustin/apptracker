@@ -30,6 +30,7 @@ export function App() {
   const [tab, setTabState] = useState<Tab>(() => tabFromHash(location.hash));
   const sessionRef = useRef(session);
   sessionRef.current = session;
+  const refreshSeqRef = useRef(0);
   const setTab = (t: Tab) => {
     setTabState(t);
     if (location.hash.replace(/^#/, "") !== t) location.hash = t;
@@ -44,16 +45,19 @@ export function App() {
   const refresh = useCallback(() => {
     if (!session) return;
     const current = session;
+    const seq = ++refreshSeqRef.current;
     setError(null);
     api
       .loadAll()
       .then((next) => {
         if (sessionRef.current !== current) return; // session changed mid-flight
+        if (refreshSeqRef.current !== seq) return; // superseded by a newer refresh
         setDb(next);
         setError(null);
       })
       .catch((e) => {
         if (sessionRef.current !== current) return;
+        if (refreshSeqRef.current !== seq) return;
         setDb(null); // don't keep showing stale/partial data behind the banner
         setError(String(e));
       });

@@ -367,6 +367,8 @@ app.put("/api/resumes/:id", async (c) => {
   const uid = c.get("userId");
   const json = await readJson(c);
   if (json === BAD_JSON) return c.json({ error: "invalid JSON body" }, 400);
+  if (!json || typeof json !== "object" || Array.isArray(json))
+    return c.json({ error: "request body must be a JSON object" }, 400);
   const { name } = json as { name?: string };
   if (typeof name !== "string" || !name.trim())
     return c.json({ error: "name is required" }, 400);
