@@ -584,6 +584,12 @@ app.get("/api/export", async (c) => {
       2,
     ),
   );
+  if (dataJson.byteLength > MAX_EXPORT_BYTES) {
+    return c.json(
+      { error: "export too large; remove some resumes and try again" },
+      413,
+    );
+  }
   const files: Record<string, Uint8Array> = { "data.json": dataJson };
   const storage = r2Storage(c.env.RESUMES);
   // Pull resume bytes in order, but stop (413) as soon as the running total
