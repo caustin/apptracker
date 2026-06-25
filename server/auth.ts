@@ -9,7 +9,13 @@ import { user, session, account, verification } from "./schema";
 // rotating it (which would expose the session signing key).
 const KNOWN_PLACEHOLDER_SECRET =
   "dev-only-secret-change-me-0000000000000000";
-const LOCAL_AUTH_HOSTS = new Set(["localhost", "127.0.0.1", "0.0.0.0", "::1"]);
+const LOCAL_AUTH_HOSTS = new Set([
+  "localhost",
+  "127.0.0.1",
+  "0.0.0.0",
+  "::1",
+  "[::1]",
+]);
 
 function isLocalAuthHost(hostname: string) {
   return LOCAL_AUTH_HOSTS.has(hostname) || hostname.endsWith(".localhost");
