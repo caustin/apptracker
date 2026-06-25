@@ -1,0 +1,85 @@
+env:
+  failOnError: true
+  failOnWarning: false
+  vars:
+    target: ${ZAP_TARGET_URL}
+  contexts:
+    - name: AppTracker
+      urls:
+        - ${ZAP_TARGET_URL}
+      includePaths:
+        - ${ZAP_TARGET_URL}.*
+      excludePaths:
+        - ${ZAP_TARGET_URL}/api/auth/sign-out.*
+        - ${ZAP_TARGET_URL}/api/auth/callback/.*
+        - ${ZAP_TARGET_URL}/api/resumes/.*/file.*
+        - ${ZAP_TARGET_URL}/api/export.*
+      authentication:
+        method: browser
+        parameters:
+          loginPageUrl: ${ZAP_TARGET_URL}/
+          loginPageWait: 5
+          stepDelay: 1
+          browserId: firefox-headless
+          diagnostics: false
+          steps:
+            - description: Fill email
+              type: USERNAME
+              cssSelector: "[data-testid='auth-email']"
+              value: ${ZAP_USERNAME}
+              timeout: 5000
+            - description: Fill password
+              type: PASSWORD
+              cssSelector: "[data-testid='auth-password']"
+              value: ${ZAP_PASSWORD}
+              timeout: 5000
+            - description: Submit login
+              type: CLICK
+              cssSelector: "[data-testid='auth-submit']"
+              timeout: 5000
+        verification:
+          method: response
+          pollFrequency: 60
+          pollUnits: requests
+          pollUrl: ${ZAP_TARGET_URL}/api/auth/get-session
+          loggedInRegex: '"user"\s*:'
+          loggedOutRegex: '"user"\s*:\s*null'
+      sessionManagement:
+        method: cookie
+      users:
+        - name: zap-user
+          credentials:
+            username: ${ZAP_USERNAME}
+            password: ${ZAP_PASSWORD}
+
+jobs:
+  - type: passiveScan-config
+    parameters:
+      maxAlertsPerRule: 20
+      scanOnlyInScope: true
+
+  - type: spider
+    parameters:
+      context: AppTracker
+      user: zap-user
+      url: ${ZAP_TARGET_URL}
+      maxDuration: 8
+      maxDepth: 5
+      maxChildren: 10
+
+  - type: passiveScan-wait
+    parameters:
+      maxDuration: 2
+
+  - type: report
+    parameters:
+      template: traditional-html
+      reportDir: /zap/wrk/reports
+      reportFile: zap-report.html
+      reportTitle: AppTracker Nightly ZAP Baseline
+      displayReport: false
+
+  - type: exitStatus
+    parameters:
+      errorLevel: High
+      warnLevel: Medium

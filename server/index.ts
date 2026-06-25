@@ -35,19 +35,34 @@ const MAX_EXPORT_BYTES = 32 * 1024 * 1024; // 32 MB
 const CSP =
   "default-src 'self'; script-src 'self'; style-src 'self' https://fonts.googleapis.com; img-src 'self' data:; font-src 'self' https://fonts.gstatic.com; connect-src 'self'; object-src 'none'; base-uri 'self'; frame-src 'none'; frame-ancestors 'none'; form-action 'self'";
 
-function securityHeaders(res: Response): Response {
-  const headers = new Headers(res.headers);
+function applySecurityHeaders(headers: Headers) {
   headers.set("X-Content-Type-Options", "nosniff");
   headers.set("Referrer-Policy", "strict-origin-when-cross-origin");
   headers.set("X-Frame-Options", "DENY");
   headers.set("Permissions-Policy", "camera=(), microphone=(), geolocation=()");
   const ct = headers.get("Content-Type") || "";
   if (ct.includes("text/html")) headers.set("Content-Security-Policy", CSP);
-  return new Response(res.body, {
-    status: res.status,
-    statusText: res.statusText,
-    headers,
-  });
+}
+
+function securityHeaders(res: Response): Response {
+  try {
+    applySecurityHeaders(res.headers);
+    return res;
+  } catch {
+    const headers = new Headers(res.headers);
+    const setCookies = res.headers.getSetCookie();
+    if (setCookies.length > 0) {
+      headers.delete("set-cookie");
+      for (const cookie of setCookies) headers.append("set-cookie", cookie);
+    }
+    applySecurityHeaders(headers);
+
+    return new Response(res.body, {
+      status: res.status,
+      statusText: res.statusText,
+      headers,
+    });
+  }
 }
 
 // Defense-in-depth CSRF check on mutating /api/* routes (excludes Better
@@ -93,7 +108,7 @@ app.use("/api/*", async (c, next) => {
     // makeAuth can throw (fail-closed on a bad secret/URL); build it inside
     // the try so the finally still closes the Neon pool and doesn't leak a
     // WebSocket connection on a misconfigured deploy.
-    c.set("auth", makeAuth(c.env, db));
+    c.set("auth", makeAuth(c.env, db, c.req.raw));
     await next();
   } finally {
     try {

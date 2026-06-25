@@ -25,7 +25,7 @@ function isLocalAuthHost(hostname: string) {
 // per-request from env rather than as a module singleton. Google is only
 // enabled when its credentials are present, so local email/password dev
 // works without configuring an OAuth app.
-export function makeAuth(env: Env, db: DB) {
+export function makeAuth(env: Env, db: DB, request?: Request) {
   // BETTER_AUTH_URL drives cookie Secure/attributes and OAuth redirects. An
   // empty/garbage value silently degrades security (no Secure flag, CSRF
   // origin check disabled), so fail closed on it regardless of environment.
@@ -39,9 +39,21 @@ export function makeAuth(env: Env, db: DB) {
     throw new Error("BETTER_AUTH_URL must be an http(s) URL");
   }
   const isLocalDev = isLocalAuthHost(baseURL.hostname);
-  const isProd = !isLocalDev;
+  const requestURL = request ? new URL(request.url) : null;
+  const isLocalRequest = requestURL
+    ? isLocalAuthHost(requestURL.hostname)
+    : isLocalDev;
+  const isProd = !isLocalRequest;
   if (isProd && baseURL.protocol !== "https:") {
     throw new Error("BETTER_AUTH_URL must be https:// in production");
+  }
+  if (isProd && isLocalDev) {
+    throw new Error("BETTER_AUTH_URL must not point to localhost in production");
+  }
+  if (isProd && requestURL && baseURL.origin !== requestURL.origin) {
+    throw new Error(
+      "BETTER_AUTH_URL must match the deployed app origin in production",
+    );
   }
   // Fail closed on a missing/placeholder session secret in production. In
   // dev any non-empty value is allowed so local setup still works.
@@ -79,6 +91,9 @@ export function makeAuth(env: Env, db: DB) {
     // brute-force / credential-stuffing and account-spam.
     rateLimit: { enabled: true },
     advanced: {
+      ipAddress: {
+        ipAddressHeaders: ["cf-connecting-ip", "x-forwarded-for"],
+      },
       // Force Secure cookies in production (Better Auth would infer this from
       // the https baseURL, but make it explicit so a misconfigured URL can't
       // silently drop the Secure flag). httpOnly + path "/" are Better Auth

@@ -50,9 +50,12 @@ export function AuthScreen() {
         {error && <div className="error-banner">{error}</div>}
         <form onSubmit={submit}>
           {mode === "signup" && (
-            <label className="field">
+            <label className="field" htmlFor="auth-name">
               Name
               <input
+                id="auth-name"
+                name="name"
+                data-testid="auth-name"
                 value={name}
                 onChange={(e) => setName(e.target.value)}
                 placeholder="Ada Lovelace"
@@ -60,9 +63,12 @@ export function AuthScreen() {
               />
             </label>
           )}
-          <label className="field">
+          <label className="field" htmlFor="auth-email">
             Email
             <input
+              id="auth-email"
+              name="email"
+              data-testid="auth-email"
               type="email"
               required
               value={email}
@@ -70,12 +76,15 @@ export function AuthScreen() {
               autoComplete="email"
             />
           </label>
-          <label className="field">
+          <label className="field" htmlFor="auth-password">
             Password
             <input
+              id="auth-password"
+              name="password"
+              data-testid="auth-password"
               type="password"
               required
-              minLength={8}
+              minLength={12}
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               autoComplete={
@@ -84,7 +93,12 @@ export function AuthScreen() {
             />
           </label>
           <div className="form-actions">
-            <button className="btn btn-primary" type="submit" disabled={busy}>
+            <button
+              className="btn btn-primary"
+              type="submit"
+              disabled={busy}
+              data-testid="auth-submit"
+            >
               {busy
                 ? "…"
                 : mode === "signup"
