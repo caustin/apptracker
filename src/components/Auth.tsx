@@ -85,6 +85,7 @@ export function AuthScreen() {
               type="password"
               required
               minLength={mode === "signup" ? 12 : undefined}
+              maxLength={mode === "signup" ? 128 : undefined}
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               autoComplete={
