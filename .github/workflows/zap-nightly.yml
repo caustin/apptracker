@@ -1,0 +1,74 @@
+name: Nightly ZAP Scan
+
+on:
+  schedule:
+    - cron: "7 6 * * *"
+      timezone: "America/Chicago"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: nightly-zap-scan
+  cancel-in-progress: false
+
+jobs:
+  zap:
+    name: Authenticated ZAP scan
+    runs-on: ubuntu-latest
+    environment: production-zap
+    timeout-minutes: 15
+
+    env:
+      ZAP_TARGET_URL: ${{ vars.ZAP_TARGET_URL }}
+      ZAP_USERNAME: ${{ secrets.ZAP_USERNAME }}
+      ZAP_PASSWORD: ${{ secrets.ZAP_PASSWORD }}
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+        with:
+          persist-credentials: false
+
+      - name: Run ZAP
+        run: |
+          set -euo pipefail
+
+          if [ -z "${ZAP_TARGET_URL}" ] || [ -z "${ZAP_USERNAME}" ] || [ -z "${ZAP_PASSWORD}" ]; then
+            echo "ZAP_TARGET_URL, ZAP_USERNAME, and ZAP_PASSWORD must be configured in the production-zap environment." >&2
+            exit 1
+          fi
+
+          case "${ZAP_TARGET_URL}" in
+            https://*) ;;
+            *)
+              echo "ZAP_TARGET_URL must be an https:// origin without a path." >&2
+              exit 1
+              ;;
+          esac
+
+          origin="$(printf '%s\n' "${ZAP_TARGET_URL}" | sed -E 's#^(https://[^/]+).*$#\1#')"
+          if [ "${origin}" != "${ZAP_TARGET_URL}" ]; then
+            echo "ZAP_TARGET_URL must be only the deployed app origin, for example https://apptracker.example.workers.dev." >&2
+            exit 1
+          fi
+
+          mkdir -p reports
+          docker run --rm \
+            -v "$PWD/.zap:/zap/wrk/.zap:ro" \
+            -v "$PWD/reports:/zap/wrk/reports:rw" \
+            -e ZAP_TARGET_URL \
+            -e ZAP_USERNAME \
+            -e ZAP_PASSWORD \
+            ghcr.io/zaproxy/zaproxy:2.16.1 \
+            zap.sh -cmd -autorun /zap/wrk/.zap/apptracker-authenticated.yaml
+
+      - name: Upload ZAP report
+        if: always()
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: zap-html-report
+          path: reports/zap-report.html
+          if-no-files-found: error
+          retention-days: 14
