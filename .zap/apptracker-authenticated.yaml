@@ -42,7 +42,7 @@ env:
           pollFrequency: 60
           pollUnits: requests
           pollUrl: ${ZAP_TARGET_URL}/api/auth/get-session
-          loggedInRegex: '"user"\s*:'
+          loggedInRegex: '"user"\s*:\s*\{'
           loggedOutRegex: '"user"\s*:\s*null'
       sessionManagement:
         method: cookie
@@ -66,6 +66,13 @@ jobs:
       maxDuration: 8
       maxDepth: 5
       maxChildren: 10
+
+  - type: spiderAjax
+    parameters:
+      context: AppTracker
+      user: zap-user
+      url: ${ZAP_TARGET_URL}
+      maxDuration: 8
 
   - type: passiveScan-wait
     parameters:

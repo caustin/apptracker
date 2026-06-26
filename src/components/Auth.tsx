@@ -84,7 +84,7 @@ export function AuthScreen() {
               data-testid="auth-password"
               type="password"
               required
-              minLength={12}
+              minLength={mode === "signup" ? 12 : undefined}
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               autoComplete={

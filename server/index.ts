@@ -40,8 +40,11 @@ function applySecurityHeaders(headers: Headers) {
   headers.set("Referrer-Policy", "strict-origin-when-cross-origin");
   headers.set("X-Frame-Options", "DENY");
   headers.set("Permissions-Policy", "camera=(), microphone=(), geolocation=()");
-  const ct = headers.get("Content-Type") || "";
-  if (ct.includes("text/html")) headers.set("Content-Security-Policy", CSP);
+  const ct = (headers.get("Content-Type") || "")
+    .split(";", 1)[0]
+    .trim()
+    .toLowerCase();
+  if (ct === "text/html") headers.set("Content-Security-Policy", CSP);
 }
 
 function securityHeaders(res: Response): Response {

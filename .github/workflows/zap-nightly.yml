@@ -27,7 +27,9 @@ jobs:
 
     steps:
       - name: Check out repository
-        uses: actions/checkout@v7
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+        with:
+          persist-credentials: false
 
       - name: Run ZAP
         run: |
@@ -54,16 +56,17 @@ jobs:
 
           mkdir -p reports
           docker run --rm \
-            -v "$PWD:/zap/wrk:rw" \
+            -v "$PWD/.zap:/zap/wrk/.zap:ro" \
+            -v "$PWD/reports:/zap/wrk/reports:rw" \
             -e ZAP_TARGET_URL \
             -e ZAP_USERNAME \
             -e ZAP_PASSWORD \
-            ghcr.io/zaproxy/zaproxy:stable \
+            ghcr.io/zaproxy/zaproxy:2.16.1 \
             zap.sh -cmd -autorun /zap/wrk/.zap/apptracker-authenticated.yaml
 
       - name: Upload ZAP report
         if: always()
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         with:
           name: zap-html-report
           path: reports/zap-report.html
