@@ -1,8 +1,9 @@
 env:
-  failOnError: true
-  failOnWarning: false
   vars:
     target: ${ZAP_TARGET_URL}
+  parameters:
+    failOnError: true
+    failOnWarning: false
   contexts:
     - name: AppTracker
       urls:
