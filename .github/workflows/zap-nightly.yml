@@ -55,7 +55,7 @@ jobs:
           fi
 
           mkdir -p reports
-          chmod 777 reports
+          chmod a+w reports
           docker run --rm \
             -v "$PWD/.zap:/zap/wrk/.zap:ro" \
             -v "$PWD/reports:/zap/wrk/reports:rw" \
