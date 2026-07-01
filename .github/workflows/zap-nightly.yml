@@ -61,7 +61,7 @@ jobs:
             -e ZAP_TARGET_URL \
             -e ZAP_USERNAME \
             -e ZAP_PASSWORD \
-            ghcr.io/zaproxy/zaproxy:2.16.1 \
+            ghcr.io/zaproxy/zaproxy:20260629-stable \
             zap.sh -cmd -autorun /zap/wrk/.zap/apptracker-authenticated.yaml
 
       - name: Upload ZAP report
