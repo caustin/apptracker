@@ -7,7 +7,7 @@ tmp_dir = "tmp"
   cmd = "go build -o ./tmp/apptracker ./cmd/apptracker"
   entrypoint = ["./tmp/apptracker"]
   include_ext = ["go", "sql"]
-  exclude_dir = ["node_modules", "src", "internal/web/dist", "data", "tmp", "bin", "planning"]
+  exclude_dir = ["node_modules", "src", "internal/web/dist", "data", "tmp", "bin"]
   delay = 300
 
 [log]

@@ -70,13 +70,16 @@ func VerifyPassword(pw, hash string) (bool, error) {
 	if _, err := fmt.Sscanf(parts[3], "m=%d,t=%d,p=%d", &mem, &t, &p); err != nil {
 		return false, errBadHash
 	}
+	if mem > 64*1024 || t < 1 || t > 10 || p < 1 || p > 4 {
+		return false, errBadHash
+	}
 	b64 := base64.RawStdEncoding
 	salt, err := b64.DecodeString(parts[4])
 	if err != nil {
 		return false, errBadHash
 	}
 	want, err := b64.DecodeString(parts[5])
-	if err != nil || len(want) == 0 {
+	if err != nil || len(want) < 16 || len(want) > 64 {
 		return false, errBadHash
 	}
 	got := argon2.IDKey([]byte(pw), salt, t, mem, p, uint32(len(want)))

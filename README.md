@@ -65,5 +65,4 @@ Signed in, hit **Export** (or `GET /api/v1/export`) for a zip of all your rows
 
 ## Docs
 
-`planning/` holds the design notes and the Go port plan. `docs/` is the
-generated Swagger spec.
+`docs/` is the generated Swagger spec.

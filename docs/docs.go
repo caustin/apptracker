@@ -1635,9 +1635,6 @@ const docTemplate = `{
                 }
             }
         }
-    },
-    "externalDocs": {
-        "description": "Port plan and design notes live in planning/"
     }
 }`
 

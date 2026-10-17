@@ -1,6 +1,7 @@
 package server_test
 
 import (
+	"fmt"
 	"net/http"
 	"strings"
 	"testing"
@@ -217,16 +218,31 @@ func TestFormContentTypeRejected(t *testing.T) {
 
 func TestAuthRateLimit(t *testing.T) {
 	c := newApp(t).client()
-	body := map[string]string{"email": "nobody@example.com", "password": password}
+	// Distinct emails, so only the per-IP limit is in play.
 	for i := range 10 {
+		body := map[string]string{"email": fmt.Sprintf("nobody%d@example.com", i), "password": password}
 		if res := c.req("POST", "/api/v1/auth/login", body); res.StatusCode != 401 {
 			t.Fatalf("attempt %d: status %d", i+1, res.StatusCode)
 		}
 	}
+	body := map[string]string{"email": "nobody@example.com", "password": password}
 	res := c.expect(c.req("POST", "/api/v1/auth/login", body), 429)
 	if !strings.Contains(res.errorMsg(t), "too many") {
 		t.Fatalf("body %s", res.body)
 	}
 	// Sign-up shares the budget.
 	c.expect(c.req("POST", "/api/v1/auth/signup", map[string]string{"email": "x@example.com", "password": password}), 429)
+}
+
+func TestLoginAccountRateLimit(t *testing.T) {
+	c := newApp(t).client()
+	body := map[string]string{"email": "Victim@example.com", "password": password}
+	for i := range 5 {
+		if res := c.req("POST", "/api/v1/auth/login", body); res.StatusCode != 401 {
+			t.Fatalf("attempt %d: status %d", i+1, res.StatusCode)
+		}
+	}
+	// Same account (case and spacing normalized) is blocked; others are not.
+	c.expect(c.req("POST", "/api/v1/auth/login", map[string]string{"email": " victim@example.com ", "password": password}), 429)
+	c.expect(c.req("POST", "/api/v1/auth/login", map[string]string{"email": "other@example.com", "password": password}), 401)
 }

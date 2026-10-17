@@ -15,7 +15,7 @@ import (
 )
 
 // dist is Vite's output (vite.config.js builds into internal/web/dist).
-// go:embed only reaches files at or below this package, hence the location.
+// The embed directive only reaches files at or below this package, hence the location.
 // The committed .gitkeep keeps the pattern valid before the first build.
 //
 //go:embed all:dist

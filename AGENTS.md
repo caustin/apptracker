@@ -2,14 +2,14 @@
 
 Multi-tenant job-search tracker: positions, people (contacts), events (emails, calls, interviews, follow-ups), uploaded PDF resumes, goals, and a dashboard with a stage funnel. Each user account is a private workspace — every application row carries a `user_id` and is scoped to the signed-in user.
 
-Human docs (the port plan, walkthrough, reviews) live in `planning/`. `docs/` is **generated** by swag — never edit it by hand.
+`docs/` is **generated** by swag — never edit it by hand.
 
 ## Stack
 
 - **Runtime:** one Go binary (`cmd/apptracker`). Fiber v3 serves the JSON API at `/api/v1/*` and the built React app, embedded from `internal/web/dist` (SPA fallback to `index.html`).
 - **Frontend:** Vite + React 19 in plain JavaScript (JSX, no TypeScript), React Router v8 in declarative mode (`<BrowserRouter>`/`<Routes>`, imports from `react-router`). Plain CSS (`src/styles.css`, light mode only).
 - **Database:** SQLite via `modernc.org/sqlite` (pure Go, no CGO), WAL mode, `foreign_keys=ON`, busy timeout, `_txlock=immediate` — all set in `sqlite.Open`. Migrations are goose files in `internal/store/sqlite/migrations/`, embedded and applied at startup. Queries are hand-written SQL in `internal/store/sqlite/queries/`, compiled by sqlc into `internal/store/sqlite/gen/` (never edit `gen/`).
-- **Auth:** local email/password. argon2id hashes; server-side sessions via Fiber's session store, persisted in the `sessions` table (keys stored as SHA-256). No social login yet (see `planning/go-port-plan.md` for the Google follow-up).
+- **Auth:** local email/password. argon2id hashes; server-side sessions via Fiber's session store, persisted in the `sessions` table (keys stored as SHA-256). No social login yet.
 - **Uploads:** resume PDFs on local disk under `DATA_DIR/resumes/<userId>/<uuid>.pdf`, behind the `storage.Storage` interface; all access goes through an `os.Root`.
 - **API docs:** swaggo annotations on each handler → `docs/` (Swagger 2.0). Swagger UI at `/swagger/` in development only.
 - **Config:** environment only — `APP_ENV`, `APP_URL`, `DB_PATH`, `DATA_DIR`, `PORT`, `TRUST_APP_URL_ORIGIN`. See `.env.example`.

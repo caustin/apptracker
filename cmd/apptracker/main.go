@@ -4,12 +4,11 @@
 //	apptracker                  serve (migrates first)
 //	apptracker migrate up|down|status
 //
-//	@title						AppTracker API
-//	@version					1.0
-//	@description				Job-search tracker: positions, people, events, resumes and goals. Every route except sign-up, login, session and health needs the session cookie set by login. Unsafe methods are rejected when the browser marks them cross-site or same-site; JSON bodies must be sent as application/json.
-//	@BasePath					/api/v1
-//	@license.name				MIT
-//	@externalDocs.description	Port plan and design notes live in planning/
+//	@title			AppTracker API
+//	@version		1.0
+//	@description	Job-search tracker: positions, people, events, resumes and goals. Every route except sign-up, login, session and health needs the session cookie set by login. Unsafe methods are rejected when the browser marks them cross-site or same-site; JSON bodies must be sent as application/json.
+//	@BasePath		/api/v1
+//	@license.name	MIT
 package main
 
 import (

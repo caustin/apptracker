@@ -4,8 +4,7 @@
 
 - [ ] **Choose hosting** (a VM or container with a persistent disk, e.g. Fly.io
       or a VPS). This decides the Docker volume setup and whether the app sits
-      on a subdomain shared with other sites (see CSRF notes in
-      `planning/go-port-plan.md`).
+      on a subdomain shared with other sites (CSRF).
 - [ ] **Configure the proxy**: TLS, then Fiber's `TrustProxy` /
       `TrustProxyConfig` in `internal/server/server.go` so the login rate
       limiter keys on the real client IP. Set `TRUST_APP_URL_ORIGIN=true` only
@@ -18,8 +17,7 @@
 
 ## Auth
 
-- [ ] **Google sign-in** — additive follow-up; see "Follow-up after cutover" in
-      `planning/go-port-plan.md`.
+- [ ] **Google sign-in** — additive follow-up.
 - [ ] **Email verification / password reset** — needs an email provider.
 - [ ] **Log out all sessions** — add a version counter on `users`, checked by
       `RequireUser`, when a change-password screen is added.

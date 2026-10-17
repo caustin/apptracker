@@ -369,8 +369,6 @@ definitions:
         example: "2026-10-13T09:30:00Z"
         type: string
     type: object
-externalDocs:
-  description: Port plan and design notes live in planning/
 info:
   contact: {}
   description: 'Job-search tracker: positions, people, events, resumes and goals.
