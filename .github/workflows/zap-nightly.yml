@@ -17,13 +17,15 @@ jobs:
   zap:
     name: Authenticated ZAP scan
     runs-on: ubuntu-latest
-    environment: production-zap
-    timeout-minutes: 15
+    timeout-minutes: 25
 
     env:
-      ZAP_TARGET_URL: ${{ vars.ZAP_TARGET_URL }}
-      ZAP_USERNAME: ${{ secrets.ZAP_USERNAME }}
-      ZAP_PASSWORD: ${{ secrets.ZAP_PASSWORD }}
+      # The scan runs against the Go binary started in this job. HTTP only, so
+      # it runs with APP_ENV=development (a Secure cookie would not come back
+      # over http); /swagger, which development exposes, is excluded in the
+      # ZAP context.
+      ZAP_TARGET_URL: http://localhost:8080
+      ZAP_USERNAME: zap-scan@example.com
 
     steps:
       - name: Check out repository
@@ -31,32 +33,47 @@ jobs:
         with:
           persist-credentials: false
 
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+
+      - name: Set up Node
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Build
+        run: |
+          npm ci
+          make build
+
+      - name: Start AppTracker and create the scan user
+        run: |
+          set -euo pipefail
+          ZAP_PASSWORD="$(openssl rand -hex 24)"
+          echo "::add-mask::${ZAP_PASSWORD}"
+          echo "ZAP_PASSWORD=${ZAP_PASSWORD}" >> "$GITHUB_ENV"
+
+          mkdir -p "$RUNNER_TEMP/apptracker"
+          APP_ENV=development APP_URL="${ZAP_TARGET_URL}" \
+            DB_PATH="$RUNNER_TEMP/apptracker/app.db" DATA_DIR="$RUNNER_TEMP/apptracker" \
+            PORT=8080 nohup ./bin/apptracker > "$RUNNER_TEMP/apptracker.log" 2>&1 &
+
+          for _ in $(seq 1 30); do
+            curl -fsS "${ZAP_TARGET_URL}/api/v1/health" >/dev/null && break
+            sleep 1
+          done
+          curl -fsS -X POST "${ZAP_TARGET_URL}/api/v1/auth/signup" \
+            -H 'Content-Type: application/json' \
+            -d "{\"email\":\"${ZAP_USERNAME}\",\"name\":\"ZAP\",\"password\":\"${ZAP_PASSWORD}\"}" >/dev/null
+
       - name: Run ZAP
         run: |
           set -euo pipefail
-
-          if [ -z "${ZAP_TARGET_URL}" ] || [ -z "${ZAP_USERNAME}" ] || [ -z "${ZAP_PASSWORD}" ]; then
-            echo "ZAP_TARGET_URL, ZAP_USERNAME, and ZAP_PASSWORD must be configured in the production-zap environment." >&2
-            exit 1
-          fi
-
-          case "${ZAP_TARGET_URL}" in
-            https://*) ;;
-            *)
-              echo "ZAP_TARGET_URL must be an https:// origin without a path." >&2
-              exit 1
-              ;;
-          esac
-
-          origin="$(printf '%s\n' "${ZAP_TARGET_URL}" | sed -E 's#^(https://[^/]+).*$#\1#')"
-          if [ "${origin}" != "${ZAP_TARGET_URL}" ]; then
-            echo "ZAP_TARGET_URL must be only the deployed app origin, for example https://apptracker.example.workers.dev." >&2
-            exit 1
-          fi
-
           mkdir -p reports
-          chmod a+w reports
-          docker run --rm \
+          docker run --rm --network host \
             -v "$PWD/.zap:/zap/wrk/.zap:ro" \
             -v "$PWD/reports:/zap/wrk/reports:rw" \
             -e ZAP_TARGET_URL \
@@ -64,6 +81,10 @@ jobs:
             -e ZAP_PASSWORD \
             ghcr.io/zaproxy/zaproxy@sha256:8d387b1a63e3425beef4846e39719f5af2a787753af2d8b6558c6257d7a577a2 \
             zap.sh -cmd -autorun /zap/wrk/.zap/apptracker-authenticated.yaml
+
+      - name: Server log
+        if: always()
+        run: cat "$RUNNER_TEMP/apptracker.log" || true
 
       - name: Upload ZAP report
         if: always()

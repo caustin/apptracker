@@ -1,0 +1,14 @@
+# Live reload for `make dev`. Rebuilds on Go or SQL changes; the frontend is
+# served by Vite, so src/ and the embedded build are ignored.
+root = "."
+tmp_dir = "tmp"
+
+[build]
+  cmd = "go build -o ./tmp/apptracker ./cmd/apptracker"
+  entrypoint = ["./tmp/apptracker"]
+  include_ext = ["go", "sql"]
+  exclude_dir = ["node_modules", "src", "internal/web/dist", "data", "tmp", "bin"]
+  delay = 300
+
+[log]
+  main_only = true

@@ -11,14 +11,14 @@ env:
       includePaths:
         - ${ZAP_TARGET_URL}.*
       excludePaths:
-        - ${ZAP_TARGET_URL}/api/auth/sign-out.*
-        - ${ZAP_TARGET_URL}/api/auth/callback/.*
-        - ${ZAP_TARGET_URL}/api/resumes/.*/file.*
-        - ${ZAP_TARGET_URL}/api/export.*
+        - ${ZAP_TARGET_URL}/api/v1/auth/logout.*
+        - ${ZAP_TARGET_URL}/api/v1/resumes/.*/file.*
+        - ${ZAP_TARGET_URL}/api/v1/export.*
+        - ${ZAP_TARGET_URL}/swagger.*
       authentication:
         method: browser
         parameters:
-          loginPageUrl: ${ZAP_TARGET_URL}/
+          loginPageUrl: ${ZAP_TARGET_URL}/login
           loginPageWait: 5
           stepDelay: 1
           browserId: firefox-headless
@@ -42,9 +42,9 @@ env:
           method: response
           pollFrequency: 60
           pollUnits: requests
-          pollUrl: ${ZAP_TARGET_URL}/api/auth/get-session
+          pollUrl: ${ZAP_TARGET_URL}/api/v1/auth/session
           loggedInRegex: '"user"\s*:\s*\{'
-          loggedOutRegex: '"user"\s*:\s*null'
+          loggedOutRegex: '"error"\s*:\s*"unauthorized"'
       sessionManagement:
         method: cookie
       users:
