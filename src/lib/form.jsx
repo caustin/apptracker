@@ -5,6 +5,9 @@
 import { useId, useRef, useState } from "react";
 import { ApiError } from "../api";
 
+// Length caps in characters, as in internal/api/validate.go.
+export const LIMITS = { short: 500, url: 2048, text: 50_000 };
+
 // Each check takes the raw input string and returns an error message or null.
 // Empty optional values pass; use `required` for mandatory fields.
 export const check = {

@@ -5,6 +5,8 @@ import (
 	"net/http"
 	"strings"
 	"testing"
+
+	"github.com/caustin/apptracker/internal/config"
 )
 
 func TestAuthRoundTrip(t *testing.T) {
@@ -95,6 +97,16 @@ func TestSessionCookieAttributes(t *testing.T) {
 				t.Fatalf("Secure = %v, want %v", found.Secure, tc.wantSecure)
 			}
 		})
+	}
+}
+
+func TestSessionNotRewrittenOnEveryRequest(t *testing.T) {
+	c := newApp(t).signup("a@example.com")
+	// Just signed in, so the session is fresh: reads don't re-save it.
+	for _, path := range []string{"/api/v1/auth/session", "/api/v1/positions"} {
+		if res := c.expect(c.req("GET", path, nil), 200); len(res.Cookies()) != 0 {
+			t.Fatalf("%s re-saved the session: %v", path, res.Header.Values("Set-Cookie"))
+		}
 	}
 }
 
@@ -234,15 +246,33 @@ func TestAuthRateLimit(t *testing.T) {
 	c.expect(c.req("POST", "/api/v1/auth/signup", map[string]string{"email": "x@example.com", "password": password}), 429)
 }
 
-func TestLoginAccountRateLimit(t *testing.T) {
-	c := newApp(t).client()
-	body := map[string]string{"email": "Victim@example.com", "password": password}
-	for i := range 5 {
-		if res := c.req("POST", "/api/v1/auth/login", body); res.StatusCode != 401 {
+func TestAuthRateLimitBehindProxy(t *testing.T) {
+	// app.Test connects from 0.0.0.0, which stands in for the proxy.
+	a := newApp(t, func(c *config.Config) { c.TrustedProxies = []string{"0.0.0.0"} })
+	c := a.client()
+	login := func(xff string) response {
+		body := map[string]string{"email": "nobody@example.com", "password": password}
+		return c.req("POST", "/api/v1/auth/login", body, "X-Forwarded-For", xff)
+	}
+	for i := range 10 {
+		if res := login("203.0.113.1"); res.StatusCode != 401 {
 			t.Fatalf("attempt %d: status %d", i+1, res.StatusCode)
 		}
 	}
-	// Same account (case and spacing normalized) is blocked; others are not.
-	c.expect(c.req("POST", "/api/v1/auth/login", map[string]string{"email": " victim@example.com ", "password": password}), 429)
-	c.expect(c.req("POST", "/api/v1/auth/login", map[string]string{"email": "other@example.com", "password": password}), 401)
+	c.expect(login("203.0.113.1"), 429)
+	// A forged address prepended by the client does not get a fresh budget:
+	// the address the proxy appended is used.
+	c.expect(login("198.51.100.7, 203.0.113.1"), 429)
+	// Another client behind the same proxy is not affected.
+	c.expect(login("203.0.113.2"), 401)
+}
+
+func TestForwardedForIgnoredWithoutTrustedProxies(t *testing.T) {
+	c := newApp(t).client()
+	for i := range 10 {
+		body := map[string]string{"email": "nobody@example.com", "password": password}
+		c.req("POST", "/api/v1/auth/login", body, "X-Forwarded-For", fmt.Sprintf("203.0.113.%d", i+1))
+	}
+	body := map[string]string{"email": "nobody@example.com", "password": password}
+	c.expect(c.req("POST", "/api/v1/auth/login", body, "X-Forwarded-For", "203.0.113.99"), 429)
 }

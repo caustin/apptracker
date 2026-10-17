@@ -9,15 +9,6 @@ import (
 	"context"
 )
 
-const deleteAllSessions = `-- name: DeleteAllSessions :exec
-DELETE FROM sessions
-`
-
-func (q *Queries) DeleteAllSessions(ctx context.Context) error {
-	_, err := q.db.ExecContext(ctx, deleteAllSessions)
-	return err
-}
-
 const deleteExpiredSessions = `-- name: DeleteExpiredSessions :execrows
 DELETE FROM sessions WHERE expires_at != 0 AND expires_at <= ?1
 `

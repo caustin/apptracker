@@ -4,6 +4,7 @@ package config
 import (
 	"errors"
 	"fmt"
+	"net"
 	"net/url"
 	"os"
 	"strings"
@@ -23,6 +24,11 @@ type Config struct {
 	// TrustedOrigins are extra origins the CSRF check accepts. Empty unless a
 	// proxy rewrites Host, in which case it holds exactly AppURL.
 	TrustedOrigins []string
+	// TrustedProxies are the IPs or CIDR ranges of the reverse proxies in
+	// front of the server. When set, the client address is read from
+	// X-Forwarded-For (walking right to left past these proxies), so the
+	// login rate limit is per client rather than per proxy.
+	TrustedProxies []string
 	DBPath         string
 	DataDir        string
 	Port           string
@@ -49,7 +55,30 @@ func Load() (Config, error) {
 	if os.Getenv("TRUST_APP_URL_ORIGIN") == "true" {
 		cfg.TrustedOrigins = []string{strings.TrimRight(cfg.AppURL, "/")}
 	}
+	proxies, err := parseProxies(os.Getenv("TRUSTED_PROXIES"))
+	if err != nil {
+		return Config{}, err
+	}
+	cfg.TrustedProxies = proxies
 	return cfg, nil
+}
+
+// parseProxies reads a comma-separated list of IPs and CIDR ranges.
+func parseProxies(raw string) ([]string, error) {
+	var out []string
+	for _, p := range strings.Split(raw, ",") {
+		p = strings.TrimSpace(p)
+		if p == "" {
+			continue
+		}
+		if net.ParseIP(p) == nil {
+			if _, _, err := net.ParseCIDR(p); err != nil {
+				return nil, fmt.Errorf("TRUSTED_PROXIES: %q is not an IP address or CIDR range", p)
+			}
+		}
+		out = append(out, p)
+	}
+	return out, nil
 }
 
 func checkAppURL(raw string, prod bool) error {

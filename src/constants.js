@@ -19,6 +19,14 @@ export function safeHttpHref(u) {
   }
 }
 
+// mailto: only for a plain address, so a stored value cannot add ?cc= or
+// &body= to the link. Otherwise undefined (caller renders plain text).
+export function safeMailtoHref(email) {
+  return email && /^[^\s@?#&%:/\\]+@[^\s@?#&%:/\\]+$/.test(email)
+    ? `mailto:${email}`
+    : undefined;
+}
+
 export const STATUS_META = {
   lead: { label: "Lead", order: 0 },
   applied: { label: "Applied", order: 1 },

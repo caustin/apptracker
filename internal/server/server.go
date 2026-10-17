@@ -45,14 +45,24 @@ func New(cfg config.Config, db *sql.DB, logRequests bool) (*Server, error) {
 	st := sqlite.New(db)
 	sessions := sqlite.NewSessions(db, sessionSweepEvery)
 
-	app := fiber.New(fiber.Config{
+	fcfg := fiber.Config{
 		AppName:      "apptracker",
 		BodyLimit:    api.BodyLimit,
 		ErrorHandler: errorHandler,
-		// Behind a proxy, set TrustProxy and TrustProxyConfig here so c.IP()
-		// (the rate limiter's key) is the client's address. Not yet: hosting
-		// is undecided.
-	})
+	}
+	// Behind a proxy every request arrives from the proxy's address, so the
+	// login rate limit would be one bucket for everybody. With the proxies
+	// listed, c.IP() walks X-Forwarded-For right to left past them, which a
+	// client cannot spoof by sending its own header.
+	if len(cfg.TrustedProxies) > 0 {
+		fcfg.TrustProxy = true
+		fcfg.TrustProxyConfig = fiber.TrustProxyConfig{Proxies: cfg.TrustedProxies}
+		fcfg.ProxyHeader = fiber.HeaderXForwardedFor
+		fcfg.EnableIPValidation = true
+	} else if cfg.IsProd() {
+		slog.Warn("TRUSTED_PROXIES is not set: behind a reverse proxy, every client shares one login rate limit")
+	}
+	app := fiber.New(fcfg)
 
 	// Order: recover, request log, security headers; then Swagger (dev),
 	// the API (its own CSRF check, rate limit and session guard), and the

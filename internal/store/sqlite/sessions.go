@@ -100,9 +100,11 @@ func (s *Sessions) Delete(key string) error {
 	return s.DeleteWithContext(context.Background(), key)
 }
 
-func (s *Sessions) ResetWithContext(ctx context.Context) error {
-	return s.q.DeleteAllSessions(ctx)
-}
+// errResetUnsupported: fiber.Storage requires Reset, but here it would sign
+// out every user, and nothing in the app needs it.
+var errResetUnsupported = errors.New("sessions: Reset is not supported (it would end every user's session)")
+
+func (s *Sessions) ResetWithContext(context.Context) error { return errResetUnsupported }
 
 func (s *Sessions) Reset() error { return s.ResetWithContext(context.Background()) }
 

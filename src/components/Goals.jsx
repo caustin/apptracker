@@ -1,7 +1,14 @@
 import { useEffect, useState } from "react";
 import { api } from "../api";
 import { fmtRange } from "../constants";
-import { FieldError, FormError, check, first, useForm } from "../lib/form";
+import {
+  FieldError,
+  FormError,
+  LIMITS,
+  check,
+  first,
+  useForm,
+} from "../lib/form";
 
 const validateGoals = (f) => ({
   weeklyApplications: first(
@@ -19,7 +26,9 @@ const validateGoals = (f) => ({
     Number(f.salaryMax) < Number(f.salaryMin)
       ? "Can't be below the floor"
       : null),
+  targetRole: check.maxLength(f.targetRole, LIMITS.short),
   targetDate: check.date(f.targetDate),
+  notes: check.maxLength(f.notes, LIMITS.text),
 });
 
 export function GoalsPage({ db, onChange }) {
@@ -71,6 +80,7 @@ export function GoalsPage({ db, onChange }) {
           <label className="field">
             Target role
             <input {...form.input("targetRole")} placeholder="Staff Engineer" />
+            <FieldError form={form} name="targetRole" />
           </label>
           <label className="field">
             Land by
@@ -115,6 +125,7 @@ export function GoalsPage({ db, onChange }) {
             rows={3}
             placeholder="Non-negotiables, equity expectations, must-haves…"
           />
+          <FieldError form={form} name="notes" />
         </label>
         <div className="form-actions">
           {saved && <span className="saved-flash">Saved ✓</span>}

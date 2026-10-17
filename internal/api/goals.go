@@ -58,19 +58,20 @@ func (h *handlers) putGoals(c fiber.Ctx) error {
 	default:
 		weekly = *req.WeeklyApplications
 	}
+	uid := auth.UserID(c)
 	g := domain.Goals{
-		UserID:             auth.UserID(c),
+		UserID:             uid,
 		WeeklyApplications: weekly,
 		SalaryMin:          v.money("salaryMin", req.SalaryMin),
 		SalaryMax:          v.money("salaryMax", req.SalaryMax),
-		TargetRole:         v.str(req.TargetRole),
+		TargetRole:         v.str("targetRole", req.TargetRole),
 		TargetDate:         v.date("targetDate", req.TargetDate),
-		Notes:              v.text(req.Notes),
+		Notes:              v.text("notes", req.Notes),
 	}
 	if err := v.err(); err != nil {
 		return err
 	}
-	saved, err := h.store.UpsertGoals(c, g)
+	saved, err := h.store.UpsertGoals(c, uid, g)
 	if err != nil {
 		return err
 	}

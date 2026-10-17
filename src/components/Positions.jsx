@@ -1,7 +1,15 @@
 import { useState } from "react";
 import { Link, useNavigate, useParams } from "react-router";
 import { api } from "../api";
-import { FieldError, FormError, check, first, useForm } from "../lib/form";
+import {
+  FieldError,
+  FormError,
+  LIMITS,
+  check,
+  first,
+  useForm,
+} from "../lib/form";
+import { useAction } from "../lib/use-action";
 import {
   EVENT_META,
   EVENT_TYPES,
@@ -34,9 +42,10 @@ export function Positions({ db, onChange }) {
       <PositionForm
         resumes={db.resumes}
         onCancel={() => setCreating(false)}
-        onSaved={(p) => {
-          setCreating(false);
-          onChange();
+        onSaved={async (p) => {
+          // Load the new row before opening its page, or the page briefly
+          // says "Position not found".
+          await onChange();
           navigate(`/positions/${p.id}`);
         }}
       />
@@ -130,9 +139,16 @@ export function PositionRoute({ db, onChange }) {
 /* ---------- create / edit form ---------- */
 
 const validatePosition = (f) => ({
-  company: check.required(f.company),
-  title: check.required(f.title),
-  url: check.httpUrl(f.url),
+  company: first(
+    check.required(f.company),
+    check.maxLength(f.company, LIMITS.short),
+  ),
+  title: first(check.required(f.title), check.maxLength(f.title, LIMITS.short)),
+  location: check.maxLength(f.location, LIMITS.short),
+  source: check.maxLength(f.source, LIMITS.short),
+  url: first(check.maxLength(f.url, LIMITS.url), check.httpUrl(f.url)),
+  description: check.maxLength(f.description, LIMITS.text),
+  impressions: check.maxLength(f.impressions, LIMITS.text),
   salaryMin: check.wholeDollars(f.salaryMin),
   salaryMax:
     check.wholeDollars(f.salaryMax) ||
@@ -197,10 +213,12 @@ function PositionForm({ position, resumes, onCancel, onSaved }) {
         <label className="field">
           Location
           <input {...form.input("location")} placeholder="Remote, Sydney…" />
+          <FieldError form={form} name="location" />
         </label>
         <label className="field">
           Source
           <input {...form.input("source")} placeholder="LinkedIn, referral…" />
+          <FieldError form={form} name="source" />
         </label>
         <label className="field">
           Posting URL
@@ -217,6 +235,7 @@ function PositionForm({ position, resumes, onCancel, onSaved }) {
               </option>
             ))}
           </select>
+          <FieldError form={form} name="resumeId" />
         </label>
         <label className="field">
           Salary min ($)
@@ -246,6 +265,7 @@ function PositionForm({ position, resumes, onCancel, onSaved }) {
           rows={6}
           placeholder="Paste the JD here"
         />
+        <FieldError form={form} name="description" />
       </label>
       <label className="field">
         Impressions
@@ -254,6 +274,7 @@ function PositionForm({ position, resumes, onCancel, onSaved }) {
           rows={3}
           placeholder="Gut feel, fit, red flags…"
         />
+        <FieldError form={form} name="impressions" />
       </label>
       <div className="form-actions">
         <button type="button" className="btn" onClick={onCancel}>
@@ -270,16 +291,17 @@ function PositionForm({ position, resumes, onCancel, onSaved }) {
 /* ---------- detail ---------- */
 function PositionDetail({ position, db, onBack, onChange }) {
   const [editing, setEditing] = useState(false);
+  const action = useAction();
   const posEvents = db.events
     .filter((e) => e.positionId === position.id)
     .sort((a, b) => b.date.localeCompare(a.date) || b.id - a.id);
   // PUT is a full replace, so send the whole position with the new status.
-  const setStatus = async (status) => {
+  const setStatus = action.run(async (status) => {
     await api.update("positions", position.id, { ...position, status });
     onChange();
-  };
+  });
 
-  const del = async () => {
+  const del = action.run(async () => {
     if (
       !confirm(
         `Delete ${position.company} — ${position.title} and all its events?`,
@@ -289,7 +311,7 @@ function PositionDetail({ position, db, onBack, onChange }) {
     await api.remove("positions", position.id);
     onBack();
     onChange();
-  };
+  });
 
   if (editing) {
     return (
@@ -311,6 +333,11 @@ function PositionDetail({ position, db, onBack, onChange }) {
       <button className="link-btn back" onClick={onBack}>
         ← All positions
       </button>
+      {action.error && (
+        <div className="error-banner" role="alert">
+          {action.error}
+        </div>
+      )}
       <div className="detail-head">
         <div>
           <h1>{position.company}</h1>
@@ -349,13 +376,8 @@ function PositionDetail({ position, db, onBack, onChange }) {
         {resume ? (
           <div className="fact">
             <div className="fact-label">Resume</div>
-            <a
-              className="fact-value"
-              href={resumeFileUrl(resume.id)}
-              target="_blank"
-              rel="noreferrer"
-            >
-              {resume.name} ↗
+            <a className="fact-value" href={resumeFileUrl(resume.id)} download>
+              {resume.name} ↓
             </a>
           </div>
         ) : (
@@ -406,7 +428,13 @@ function PositionDetail({ position, db, onBack, onChange }) {
             )}
             <ul className="timeline">
               {posEvents.map((e) => (
-                <EventItem key={e.id} event={e} db={db} onChange={onChange} />
+                <EventItem
+                  key={e.id}
+                  event={e}
+                  db={db}
+                  onChange={onChange}
+                  run={action.run}
+                />
               ))}
             </ul>
           </section>
@@ -425,13 +453,14 @@ function Fact({ label, value }) {
   );
 }
 
-function EventItem({ event, db, onChange }) {
+// run reports a failed delete in the detail page's banner.
+function EventItem({ event, db, onChange, run }) {
   const person = db.people.find((p) => p.id === event.personId);
-  const del = async () => {
+  const del = run(async () => {
     if (!confirm("Delete this event?")) return;
     await api.remove("events", event.id);
     onChange();
-  };
+  });
 
   return (
     <li className="timeline-item">
@@ -467,6 +496,9 @@ function EventItem({ event, db, onChange }) {
 
 const validateEvent = (f) => ({
   type: check.required(f.type),
+  notes: check.maxLength(f.notes, LIMITS.text),
+  feedback: check.maxLength(f.feedback, LIMITS.short),
+  outcome: check.maxLength(f.outcome, LIMITS.short),
   date: first(check.required(f.date), check.date(f.date)),
   followupOn:
     check.date(f.followupOn) ||
@@ -530,6 +562,7 @@ function EventForm({ position, db, onChange }) {
                 </option>
               ))}
             </select>
+            <FieldError form={form} name="personId" />
           </label>
           <label className="field">
             Follow up on
@@ -544,11 +577,13 @@ function EventForm({ position, db, onChange }) {
             rows={3}
             placeholder="What was discussed…"
           />
+          <FieldError form={form} name="notes" />
         </label>
         <div className="form-grid">
           <label className="field">
             Feedback
             <input {...form.input("feedback")} />
+            <FieldError form={form} name="feedback" />
           </label>
           <label className="field">
             Outcome
@@ -556,6 +591,7 @@ function EventForm({ position, db, onChange }) {
               {...form.input("outcome")}
               placeholder="Moving forward, passed…"
             />
+            <FieldError form={form} name="outcome" />
           </label>
         </div>
         <div className="form-actions">

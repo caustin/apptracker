@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Navigate, NavLink, Route, Routes, useLocation } from "react-router";
 import { api, API } from "./api";
 import { useSession, signOut } from "./lib/auth-client";
+import { useAction } from "./lib/use-action";
 import { AuthScreen } from "./components/Auth";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import { Dashboard } from "./components/Dashboard";
@@ -44,12 +45,19 @@ function SignedIn({ session }) {
   const sessionRef = useRef(session);
   sessionRef.current = session;
   const refreshSeqRef = useRef(0);
+  const action = useAction();
+  const doSignOut = action.run(async () => {
+    const res = await signOut();
+    if (res.error) throw new Error(`Could not sign out — ${res.error.message}`);
+  });
 
+  // The returned promise settles once the new data (or the error) is in
+  // place, so callers can wait for it before navigating.
   const refresh = useCallback(() => {
     const current = session;
     const seq = ++refreshSeqRef.current;
     setError(null);
-    api
+    return api
       .loadAll()
       .then((next) => {
         if (sessionRef.current !== current) return; // session changed mid-flight
@@ -97,7 +105,7 @@ function SignedIn({ session }) {
             <a className="btn" href={`${API}/export`}>
               Export
             </a>
-            <button className="btn" onClick={() => signOut()}>
+            <button className="btn" onClick={doSignOut}>
               Sign out
             </button>
           </div>
@@ -105,6 +113,11 @@ function SignedIn({ session }) {
       </header>
 
       <main className="content">
+        {action.error && (
+          <div className="error-banner" role="alert">
+            {action.error}
+          </div>
+        )}
         {error && (
           <div className="error-banner">
             Could not reach the API server — {error}

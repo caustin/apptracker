@@ -10,8 +10,5 @@ ON CONFLICT (id_hash) DO UPDATE SET data = excluded.data, expires_at = excluded.
 -- name: DeleteSession :exec
 DELETE FROM sessions WHERE id_hash = ?;
 
--- name: DeleteAllSessions :exec
-DELETE FROM sessions;
-
 -- name: DeleteExpiredSessions :execrows
 DELETE FROM sessions WHERE expires_at != 0 AND expires_at <= sqlc.arg(now);

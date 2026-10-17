@@ -1,7 +1,20 @@
 import { useState } from "react";
 import { api } from "../api";
-import { FieldError, FormError, check, useForm } from "../lib/form";
-import { EVENT_META, fmtDate, safeHttpHref } from "../constants";
+import {
+  FieldError,
+  FormError,
+  LIMITS,
+  check,
+  first,
+  useForm,
+} from "../lib/form";
+import { useAction } from "../lib/use-action";
+import {
+  EVENT_META,
+  fmtDate,
+  safeHttpHref,
+  safeMailtoHref,
+} from "../constants";
 
 const BLANK = {
   name: "",
@@ -59,7 +72,12 @@ export function People({ db, onChange }) {
                 {[p.role, p.company].filter(Boolean).join(" · ") || "—"}
               </div>
               <div className="person-contact">
-                {p.email && <a href={`mailto:${p.email}`}>{p.email}</a>}
+                {p.email &&
+                  (safeMailtoHref(p.email) ? (
+                    <a href={safeMailtoHref(p.email)}>{p.email}</a>
+                  ) : (
+                    <span>{p.email}</span>
+                  ))}
                 {p.phone && <span>{p.phone}</span>}
                 {p.linkedin &&
                   (safeHttpHref(p.linkedin) ? (
@@ -90,9 +108,16 @@ export function People({ db, onChange }) {
 }
 
 const validatePerson = (f) => ({
-  name: check.required(f.name),
-  email: check.email(f.email),
-  linkedin: check.httpUrl(f.linkedin),
+  name: first(check.required(f.name), check.maxLength(f.name, LIMITS.short)),
+  role: check.maxLength(f.role, LIMITS.short),
+  company: check.maxLength(f.company, LIMITS.short),
+  email: first(check.maxLength(f.email, LIMITS.short), check.email(f.email)),
+  phone: check.maxLength(f.phone, LIMITS.short),
+  linkedin: first(
+    check.maxLength(f.linkedin, LIMITS.url),
+    check.httpUrl(f.linkedin),
+  ),
+  notes: check.maxLength(f.notes, LIMITS.text),
 });
 
 function PersonForm({ person, onCancel, onSaved }) {
@@ -116,11 +141,12 @@ function PersonForm({ person, onCancel, onSaved }) {
     onSaved();
   };
 
-  const del = async () => {
+  const action = useAction();
+  const del = action.run(async () => {
     if (!person || !confirm(`Delete ${person.name}?`)) return;
     await api.remove("people", person.id);
     onSaved();
-  };
+  });
 
   return (
     <form
@@ -131,6 +157,11 @@ function PersonForm({ person, onCancel, onSaved }) {
     >
       <h2>{person ? "Edit person" : "New person"}</h2>
       <FormError form={form} />
+      {action.error && (
+        <div className="error-banner" role="alert">
+          {action.error}
+        </div>
+      )}
       <div className="form-grid">
         <label className="field">
           Name *
@@ -143,10 +174,12 @@ function PersonForm({ person, onCancel, onSaved }) {
             {...form.input("role")}
             placeholder="Recruiter, hiring manager…"
           />
+          <FieldError form={form} name="role" />
         </label>
         <label className="field">
           Company
           <input {...form.input("company")} />
+          <FieldError form={form} name="company" />
         </label>
         <label className="field">
           Email
@@ -156,6 +189,7 @@ function PersonForm({ person, onCancel, onSaved }) {
         <label className="field">
           Phone
           <input {...form.input("phone")} type="tel" />
+          <FieldError form={form} name="phone" />
         </label>
         <label className="field">
           LinkedIn
@@ -170,6 +204,7 @@ function PersonForm({ person, onCancel, onSaved }) {
       <label className="field">
         Notes
         <textarea {...form.input("notes")} rows={2} />
+        <FieldError form={form} name="notes" />
       </label>
       <div className="form-actions">
         {person && (

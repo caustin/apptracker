@@ -63,10 +63,16 @@ export const signUp = {
     authCall("/auth/signup", { email, password, name }),
 };
 
+// Returns { error } like the others. On failure the user stays signed in,
+// since the server session may still be live; a 401 means it is already gone.
 export async function signOut() {
   try {
     await request("/auth/logout", { method: "POST" });
-  } finally {
-    signedOut();
+  } catch (err) {
+    if (err.status !== 401) {
+      return { error: { message: err.message, status: err.status } };
+    }
   }
+  signedOut();
+  return { error: null };
 }

@@ -2,11 +2,7 @@
 package api
 
 import (
-	"crypto/sha256"
-	"encoding/hex"
-	"encoding/json"
 	"errors"
-	"strings"
 	"time"
 
 	"github.com/gofiber/fiber/v3"
@@ -68,24 +64,7 @@ func Register(app *fiber.App, d Deps) {
 		},
 	})
 	v1.Post("/auth/signup", authLimit, h.signup)
-	// Per-account limit on top of the per-IP one, so guesses against a single
-	// email are bounded even when spread over addresses.
-	accountLimit := limiter.New(limiter.Config{
-		Max:        authLimitMax / 2,
-		Expiration: authLimitWindow * 5,
-		KeyGenerator: func(c fiber.Ctx) string {
-			var req struct {
-				Email string `json:"email"`
-			}
-			_ = json.Unmarshal(c.Body(), &req)
-			sum := sha256.Sum256([]byte(c.IP() + "|" + strings.ToLower(strings.TrimSpace(req.Email))))
-			return "login:" + hex.EncodeToString(sum[:])
-		},
-		LimitReached: func(fiber.Ctx) error {
-			return fiber.NewError(fiber.StatusTooManyRequests, "too many attempts, try again later")
-		},
-	})
-	v1.Post("/auth/login", authLimit, accountLimit, h.login)
+	v1.Post("/auth/login", authLimit, h.login)
 	v1.Post("/auth/logout", h.logout)
 	v1.Get("/auth/session", h.session)
 
@@ -126,10 +105,14 @@ func Register(app *fiber.App, d Deps) {
 	})
 }
 
-// storeErr maps store.ErrNotFound to a 404; anything else is a 500.
+// storeErr maps store.ErrNotFound to a 404 and a *store.LinkError to a 400
+// ("resumeId: not found"); anything else is a 500.
 func storeErr(err error) error {
 	if errors.Is(err, store.ErrNotFound) {
 		return fiber.NewError(fiber.StatusNotFound, "not found")
+	}
+	if le, ok := errors.AsType[*store.LinkError](err); ok {
+		return fiber.NewError(fiber.StatusBadRequest, le.Error())
 	}
 	return err
 }

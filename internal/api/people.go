@@ -11,12 +11,12 @@ func (r PersonRequest) fields() (domain.PersonFields, error) {
 	var v validator
 	f := domain.PersonFields{
 		Name:     v.required("name", r.Name),
-		Role:     v.str(r.Role),
-		Company:  v.str(r.Company),
-		Email:    v.str(r.Email),
-		Phone:    v.str(r.Phone),
+		Role:     v.str("role", r.Role),
+		Company:  v.str("company", r.Company),
+		Email:    v.email("email", r.Email),
+		Phone:    v.str("phone", r.Phone),
 		LinkedIn: v.httpURL("linkedin", r.LinkedIn),
-		Notes:    v.text(r.Notes),
+		Notes:    v.text("notes", r.Notes),
 	}
 	return f, v.err()
 }

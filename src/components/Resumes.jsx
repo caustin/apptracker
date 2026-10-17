@@ -1,6 +1,7 @@
 import { useRef, useState } from "react";
 import { api } from "../api";
 import { FieldError, FormError, check, first, useForm } from "../lib/form";
+import { useAction } from "../lib/use-action";
 import { fmtDate, resumeFileUrl } from "../constants";
 
 const MAX_RESUMES = 25;
@@ -32,6 +33,7 @@ export function Resumes({ db, onChange }) {
   const fileRef = useRef(null);
   const [pending, setPending] = useState(null); // the chosen File
   const [error, setError] = useState(null);
+  const action = useAction();
 
   const choose = async (file) => {
     setError(null);
@@ -40,7 +42,7 @@ export function Resumes({ db, onChange }) {
     else setPending(file);
   };
 
-  const del = async (id, name, usedBy) => {
+  const del = action.run(async (id, name, usedBy) => {
     const warning =
       usedBy > 0
         ? `Delete "${name}"? It is attached to ${usedBy} position${usedBy === 1 ? "" : "s"}, which will be unlinked.`
@@ -48,7 +50,7 @@ export function Resumes({ db, onChange }) {
     if (!confirm(warning)) return;
     await api.remove("resumes", id);
     onChange();
-  };
+  });
 
   return (
     <div>
@@ -74,9 +76,9 @@ export function Resumes({ db, onChange }) {
         />
       </div>
 
-      {error && (
+      {(error || action.error) && (
         <div className="error-banner" role="alert">
-          {error}
+          {error || action.error}
         </div>
       )}
 
@@ -189,13 +191,8 @@ function ResumeRow({ resume, usedBy, onDelete, onChange }) {
         <button className="link-btn" onClick={() => setRenaming(true)}>
           rename
         </button>
-        <a
-          className="link-btn"
-          href={resumeFileUrl(resume.id)}
-          target="_blank"
-          rel="noreferrer"
-        >
-          view ↗
+        <a className="link-btn" href={resumeFileUrl(resume.id)} download>
+          download
         </a>
         <button className="link-btn danger" onClick={onDelete}>
           delete

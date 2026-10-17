@@ -65,6 +65,10 @@ func TestPeopleValidation(t *testing.T) {
 		row{"name": "x", "linkedin": "javascript:alert(1)"},
 		row{"name": "x", "linkedin": "data:text/html,hi"},
 		row{"name": "x", "linkedin": "not a url"},
+		row{"name": "x", "email": "not an email"},
+		row{"name": "x", "email": "Grace <grace@example.com>"},
+		row{"name": strings.Repeat("x", 501)},
+		row{"name": "x", "notes": strings.Repeat("x", 50_001)},
 		row{"name": 5},
 		"{not json",
 	} {
@@ -77,6 +81,36 @@ func TestPeopleValidation(t *testing.T) {
 	for _, id := range []string{"abc", "0", "-1", "1.5"} {
 		c.expect(c.req("GET", "/api/v1/people/"+id, nil), 400)
 		c.expect(c.req("DELETE", "/api/v1/people/"+id, nil), 400)
+	}
+}
+
+func TestFieldLimits(t *testing.T) {
+	c := newApp(t).signup("a@example.com")
+	// At the caps is fine; whitespace around a short field is trimmed first.
+	var p row
+	c.expect(c.req("POST", "/api/v1/people", row{
+		"name": " " + strings.Repeat("é", 500) + " ", "email": "grace@example.com",
+		"notes": strings.Repeat("x", 50_000),
+	}), 201).json(t, &p)
+	if len([]rune(p["name"].(string))) != 500 {
+		t.Fatalf("name not trimmed: %d characters", len([]rune(p["name"].(string))))
+	}
+	res := c.expect(c.req("POST", "/api/v1/positions", row{"company": "A", "title": "T", "url": "https://x.example/" + strings.Repeat("a", 2048)}), 400)
+	if res.errorMsg(t) != "url: at most 2048 characters" {
+		t.Fatalf("error %q", res.errorMsg(t))
+	}
+	// JSON bodies over 1 MB are refused before decoding.
+	big := `{"name":"x","notes":"` + strings.Repeat("x", 1<<20) + `"}`
+	res = c.expect(c.req("POST", "/api/v1/people", big), 413)
+	if res.errorMsg(t) != "request too large" {
+		t.Fatalf("error %q", res.errorMsg(t))
+	}
+	// Single-line event fields are trimmed like other short fields.
+	pos := c.create("/api/v1/positions", row{"company": "A", "title": "T"}).id()
+	var e row
+	c.expect(c.req("POST", "/api/v1/events", row{"type": "note", "date": "2026-10-13", "positionId": pos, "feedback": "  good  ", "outcome": " "}), 201).json(t, &e)
+	if e["feedback"] != "good" || e["outcome"] != nil {
+		t.Fatalf("event %v", e)
 	}
 }
 
@@ -367,6 +401,7 @@ func TestTenancy(t *testing.T) {
 
 	// Bob's own rows, to try cross-linking into Alice's.
 	bobPos := bob.create("/api/v1/positions", row{"company": "B", "title": "T"}).id()
+	bobEvent := bob.create("/api/v1/events", row{"type": "note", "date": "2026-10-13", "positionId": bobPos}).id()
 
 	cases := []struct {
 		method, path string
@@ -390,12 +425,19 @@ func TestTenancy(t *testing.T) {
 		{"PUT", fmt.Sprintf("/api/v1/positions/%d", bobPos), row{"company": "x", "title": "x", "resumeId": resume}, 400},
 		{"POST", "/api/v1/events", row{"type": "note", "date": "2026-10-13", "positionId": position}, 400},
 		{"POST", "/api/v1/events", row{"type": "note", "date": "2026-10-13", "personId": person}, 400},
+		{"PUT", fmt.Sprintf("/api/v1/events/%d", bobEvent), row{"type": "note", "date": "2026-10-13", "positionId": position}, 400},
+		{"PUT", fmt.Sprintf("/api/v1/events/%d", bobEvent), row{"type": "note", "date": "2026-10-13", "personId": person}, 400},
 	}
 	for _, tc := range cases {
 		got := bob.req(tc.method, tc.path, tc.body)
 		if got.StatusCode != tc.status {
 			t.Errorf("bob %s %s: %d, want %d (%s)", tc.method, tc.path, got.StatusCode, tc.status, got.body)
 		}
+	}
+	// The refusal names the field, so the form can show it there.
+	linkRes := bob.expect(bob.req("POST", "/api/v1/positions", row{"company": "x", "title": "x", "resumeId": resume}), 400)
+	if linkRes.errorMsg(t) != "resumeId: not found" {
+		t.Fatalf("error %q", linkRes.errorMsg(t))
 	}
 	// Lists only show Bob's rows.
 	for _, path := range []string{"/api/v1/positions", "/api/v1/people", "/api/v1/events", "/api/v1/resumes"} {

@@ -5,7 +5,9 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
-	"strings"
+
+	sqlite3 "modernc.org/sqlite"
+	sqlitelib "modernc.org/sqlite/lib"
 
 	"github.com/caustin/apptracker/internal/domain"
 	"github.com/caustin/apptracker/internal/store"
@@ -51,6 +53,42 @@ func deleted(n int64, err error) error {
 		return store.ErrNotFound
 	}
 	return nil
+}
+
+// checkLink returns a *LinkError unless the linked row exists and belongs to
+// userID. A nil id (no link) passes.
+func checkLink(ctx context.Context, field string, id *int64, get func(context.Context, int64) error) error {
+	if id == nil {
+		return nil
+	}
+	if err := get(ctx, *id); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return &store.LinkError{Field: field}
+		}
+		return err
+	}
+	return nil
+}
+
+func resumeLink(q *gen.Queries, userID string) func(context.Context, int64) error {
+	return func(ctx context.Context, id int64) error {
+		_, err := q.GetResume(ctx, gen.GetResumeParams{UserID: userID, ID: id})
+		return err
+	}
+}
+
+func positionLink(q *gen.Queries, userID string) func(context.Context, int64) error {
+	return func(ctx context.Context, id int64) error {
+		_, err := q.GetPosition(ctx, gen.GetPositionParams{UserID: userID, ID: id})
+		return err
+	}
+}
+
+func personLink(q *gen.Queries, userID string) func(context.Context, int64) error {
+	return func(ctx context.Context, id int64) error {
+		_, err := q.GetPerson(ctx, gen.GetPersonParams{UserID: userID, ID: id})
+		return err
+	}
 }
 
 // --- nullable conversions ---
@@ -118,7 +156,10 @@ func (s *Store) CreateUser(ctx context.Context, u domain.User) (domain.User, err
 		ID: u.ID, Email: u.Email, Name: u.Name, PasswordHash: nstr(u.PasswordHash),
 		CreatedAt: u.CreatedAt, UpdatedAt: u.UpdatedAt,
 	})
-	if err != nil && strings.Contains(err.Error(), "UNIQUE constraint failed: users.email") {
+	// email is the only UNIQUE column on users (a duplicate id would be a
+	// PRIMARYKEY violation, a different code).
+	var serr *sqlite3.Error
+	if errors.As(err, &serr) && serr.Code() == sqlitelib.SQLITE_CONSTRAINT_UNIQUE {
 		return domain.User{}, store.ErrEmailTaken
 	}
 	return mapRow(row, err, toUser)
@@ -157,22 +198,38 @@ func (s *Store) GetPosition(ctx context.Context, userID string, id int64) (domai
 }
 
 func (s *Store) CreatePosition(ctx context.Context, userID string, f domain.PositionFields) (domain.Position, error) {
-	row, err := s.q.CreatePosition(ctx, gen.CreatePositionParams{
-		UserID: userID, Company: f.Company, Title: f.Title, Url: nstr(f.URL),
-		Location: nstr(f.Location), Source: nstr(f.Source), Description: nstr(f.Description),
-		Impressions: nstr(f.Impressions), ResumeID: nint(f.ResumeID),
-		SalaryMin: nint(f.SalaryMin), SalaryMax: nint(f.SalaryMax), Status: f.Status,
-		AppliedAt: nstr(f.AppliedAt), CreatedAt: domain.Today(),
+	var row gen.Position
+	err := s.inTx(ctx, func(q *gen.Queries) error {
+		if err := checkLink(ctx, "resumeId", f.ResumeID, resumeLink(q, userID)); err != nil {
+			return err
+		}
+		var err error
+		row, err = q.CreatePosition(ctx, gen.CreatePositionParams{
+			UserID: userID, Company: f.Company, Title: f.Title, Url: nstr(f.URL),
+			Location: nstr(f.Location), Source: nstr(f.Source), Description: nstr(f.Description),
+			Impressions: nstr(f.Impressions), ResumeID: nint(f.ResumeID),
+			SalaryMin: nint(f.SalaryMin), SalaryMax: nint(f.SalaryMax), Status: f.Status,
+			AppliedAt: nstr(f.AppliedAt), CreatedAt: domain.Today(),
+		})
+		return err
 	})
 	return mapRow(row, err, toPosition)
 }
 
 func (s *Store) UpdatePosition(ctx context.Context, userID string, id int64, f domain.PositionFields) (domain.Position, error) {
-	row, err := s.q.UpdatePosition(ctx, gen.UpdatePositionParams{
-		Company: f.Company, Title: f.Title, Url: nstr(f.URL), Location: nstr(f.Location),
-		Source: nstr(f.Source), Description: nstr(f.Description), Impressions: nstr(f.Impressions),
-		ResumeID: nint(f.ResumeID), SalaryMin: nint(f.SalaryMin), SalaryMax: nint(f.SalaryMax),
-		Status: f.Status, AppliedAt: nstr(f.AppliedAt), UserID: userID, ID: id,
+	var row gen.Position
+	err := s.inTx(ctx, func(q *gen.Queries) error {
+		if err := checkLink(ctx, "resumeId", f.ResumeID, resumeLink(q, userID)); err != nil {
+			return err
+		}
+		var err error
+		row, err = q.UpdatePosition(ctx, gen.UpdatePositionParams{
+			Company: f.Company, Title: f.Title, Url: nstr(f.URL), Location: nstr(f.Location),
+			Source: nstr(f.Source), Description: nstr(f.Description), Impressions: nstr(f.Impressions),
+			ResumeID: nint(f.ResumeID), SalaryMin: nint(f.SalaryMin), SalaryMax: nint(f.SalaryMax),
+			Status: f.Status, AppliedAt: nstr(f.AppliedAt), UserID: userID, ID: id,
+		})
+		return err
 	})
 	return mapRow(row, err, toPosition)
 }
@@ -243,20 +300,44 @@ func (s *Store) GetEvent(ctx context.Context, userID string, id int64) (domain.E
 	return mapRow(row, err, toEvent)
 }
 
+// checkEventLinks checks an event's linked position and person.
+func checkEventLinks(ctx context.Context, q *gen.Queries, userID string, f domain.EventFields) error {
+	if err := checkLink(ctx, "positionId", f.PositionID, positionLink(q, userID)); err != nil {
+		return err
+	}
+	return checkLink(ctx, "personId", f.PersonID, personLink(q, userID))
+}
+
 func (s *Store) CreateEvent(ctx context.Context, userID string, f domain.EventFields) (domain.Event, error) {
-	row, err := s.q.CreateEvent(ctx, gen.CreateEventParams{
-		UserID: userID, PositionID: nint(f.PositionID), PersonID: nint(f.PersonID),
-		Type: f.Type, Date: f.Date, Notes: nstr(f.Notes), Feedback: nstr(f.Feedback),
-		Outcome: nstr(f.Outcome), FollowupOn: nstr(f.FollowupOn), CreatedAt: domain.Today(),
+	var row gen.Event
+	err := s.inTx(ctx, func(q *gen.Queries) error {
+		if err := checkEventLinks(ctx, q, userID, f); err != nil {
+			return err
+		}
+		var err error
+		row, err = q.CreateEvent(ctx, gen.CreateEventParams{
+			UserID: userID, PositionID: nint(f.PositionID), PersonID: nint(f.PersonID),
+			Type: f.Type, Date: f.Date, Notes: nstr(f.Notes), Feedback: nstr(f.Feedback),
+			Outcome: nstr(f.Outcome), FollowupOn: nstr(f.FollowupOn), CreatedAt: domain.Today(),
+		})
+		return err
 	})
 	return mapRow(row, err, toEvent)
 }
 
 func (s *Store) UpdateEvent(ctx context.Context, userID string, id int64, f domain.EventFields) (domain.Event, error) {
-	row, err := s.q.UpdateEvent(ctx, gen.UpdateEventParams{
-		PositionID: nint(f.PositionID), PersonID: nint(f.PersonID), Type: f.Type, Date: f.Date,
-		Notes: nstr(f.Notes), Feedback: nstr(f.Feedback), Outcome: nstr(f.Outcome),
-		FollowupOn: nstr(f.FollowupOn), UserID: userID, ID: id,
+	var row gen.Event
+	err := s.inTx(ctx, func(q *gen.Queries) error {
+		if err := checkEventLinks(ctx, q, userID, f); err != nil {
+			return err
+		}
+		var err error
+		row, err = q.UpdateEvent(ctx, gen.UpdateEventParams{
+			PositionID: nint(f.PositionID), PersonID: nint(f.PersonID), Type: f.Type, Date: f.Date,
+			Notes: nstr(f.Notes), Feedback: nstr(f.Feedback), Outcome: nstr(f.Outcome),
+			FollowupOn: nstr(f.FollowupOn), UserID: userID, ID: id,
+		})
+		return err
 	})
 	return mapRow(row, err, toEvent)
 }
@@ -330,12 +411,12 @@ func (s *Store) GetGoals(ctx context.Context, userID string) (domain.Goals, erro
 	return mapRow(row, err, toGoals)
 }
 
-func (s *Store) UpsertGoals(ctx context.Context, g domain.Goals) (domain.Goals, error) {
-	if g.UserID == "" {
+func (s *Store) UpsertGoals(ctx context.Context, userID string, g domain.Goals) (domain.Goals, error) {
+	if userID == "" {
 		return domain.Goals{}, fmt.Errorf("upsert goals: empty user ID")
 	}
 	row, err := s.q.UpsertGoals(ctx, gen.UpsertGoalsParams{
-		UserID: g.UserID, WeeklyApplications: g.WeeklyApplications,
+		UserID: userID, WeeklyApplications: g.WeeklyApplications,
 		SalaryMin: nint(g.SalaryMin), SalaryMax: nint(g.SalaryMax),
 		TargetRole: nstr(g.TargetRole), TargetDate: nstr(g.TargetDate), Notes: nstr(g.Notes),
 	})

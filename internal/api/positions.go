@@ -1,14 +1,10 @@
 package api
 
 import (
-	"context"
-	"errors"
-
 	"github.com/gofiber/fiber/v3"
 
 	"github.com/caustin/apptracker/internal/auth"
 	"github.com/caustin/apptracker/internal/domain"
-	"github.com/caustin/apptracker/internal/store"
 )
 
 // fields validates the body. appliedAt is the value sent; stamping happens in
@@ -19,10 +15,10 @@ func (r PositionRequest) fields() (domain.PositionFields, error) {
 		Company:     v.required("company", r.Company),
 		Title:       v.required("title", r.Title),
 		URL:         v.httpURL("url", r.URL),
-		Location:    v.str(r.Location),
-		Source:      v.str(r.Source),
-		Description: v.text(r.Description),
-		Impressions: v.text(r.Impressions),
+		Location:    v.str("location", r.Location),
+		Source:      v.str("source", r.Source),
+		Description: v.text("description", r.Description),
+		Impressions: v.text("impressions", r.Impressions),
 		ResumeID:    v.ref("resumeId", r.ResumeID),
 		SalaryMin:   v.money("salaryMin", r.SalaryMin),
 		SalaryMax:   v.money("salaryMax", r.SalaryMax),
@@ -30,20 +26,6 @@ func (r PositionRequest) fields() (domain.PositionFields, error) {
 		AppliedAt:   v.date("appliedAt", r.AppliedAt),
 	}
 	return f, v.err()
-}
-
-// checkPositionRefs makes sure a linked resume belongs to the same user.
-func (h *handlers) checkPositionRefs(ctx context.Context, userID string, f domain.PositionFields) error {
-	if f.ResumeID == nil {
-		return nil
-	}
-	if _, err := h.store.GetResume(ctx, userID, *f.ResumeID); err != nil {
-		if errors.Is(err, store.ErrNotFound) {
-			return fiber.NewError(fiber.StatusBadRequest, "resume not found")
-		}
-		return err
-	}
-	return nil
 }
 
 // listPositions godoc
@@ -105,14 +87,10 @@ func (h *handlers) createPosition(c fiber.Ctx) error {
 	if err != nil {
 		return err
 	}
-	uid := auth.UserID(c)
-	if err := h.checkPositionRefs(c, uid, f); err != nil {
-		return err
-	}
 	f.AppliedAt = domain.StampApplied(f.Status, f.AppliedAt, nil, domain.Today())
-	p, err := h.store.CreatePosition(c, uid, f)
+	p, err := h.store.CreatePosition(c, auth.UserID(c), f)
 	if err != nil {
-		return err
+		return storeErr(err)
 	}
 	return c.Status(fiber.StatusCreated).JSON(p)
 }
@@ -147,9 +125,6 @@ func (h *handlers) updatePosition(c fiber.Ctx) error {
 	}
 	f, err := req.fields()
 	if err != nil {
-		return err
-	}
-	if err := h.checkPositionRefs(c, uid, f); err != nil {
 		return err
 	}
 	f.AppliedAt = domain.StampApplied(f.Status, f.AppliedAt, existing.AppliedAt, domain.Today())

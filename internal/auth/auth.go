@@ -22,8 +22,12 @@ import (
 const (
 	IdleTimeout     = 7 * 24 * time.Hour
 	AbsoluteTimeout = 30 * 24 * time.Hour
+	// RefreshEvery is how often a request re-saves the session to slide its
+	// idle timeout. Saving on every request would write a row per API call.
+	RefreshEvery = 10 * time.Minute
 
 	userIDKey   = "uid"
+	savedAtKey  = "saved" // unix seconds of the last save
 	userIDLocal = "userId"
 )
 
@@ -136,6 +140,7 @@ func (a *Auth) SignIn(c fiber.Ctx, userID string) error {
 		return err
 	}
 	sess.Set(userIDKey, userID)
+	sess.Set(savedAtKey, time.Now().Unix())
 	return sess.Save()
 }
 
@@ -153,8 +158,9 @@ func (a *Auth) SignOut(c fiber.Ctx) error {
 }
 
 // CurrentUserID returns the signed-in user's ID, or "" when there is none.
-// A valid session is saved again so its idle timeout slides. Requests without
-// a session never write anything, so anonymous traffic creates no rows.
+// A valid session is saved again, at most every RefreshEvery, so its idle
+// timeout slides. Requests without a session never write anything, so
+// anonymous traffic creates no rows.
 func (a *Auth) CurrentUserID(c fiber.Ctx) (string, error) {
 	sess, err := a.sessions.Get(c)
 	if err != nil {
@@ -165,8 +171,12 @@ func (a *Auth) CurrentUserID(c fiber.Ctx) (string, error) {
 	if sess.Fresh() || uid == "" {
 		return "", nil
 	}
-	if err := sess.Save(); err != nil {
-		return "", err
+	now := time.Now().Unix()
+	if saved, _ := sess.Get(savedAtKey).(int64); now-saved >= int64(RefreshEvery/time.Second) {
+		sess.Set(savedAtKey, now)
+		if err := sess.Save(); err != nil {
+			return "", err
+		}
 	}
 	return uid, nil
 }

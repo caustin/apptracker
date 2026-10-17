@@ -56,7 +56,9 @@ docker run -p 8080:8080 -v apptracker-data:/data \
 ```
 
 Put it behind a TLS-terminating proxy; production refuses to start without an
-`https://` `APP_URL`. Settings are listed in `.env.example`.
+`https://` `APP_URL`. Set `TRUSTED_PROXIES` to the proxy's address (or its
+network's CIDR) so the login rate limit sees each client's IP rather than the
+proxy's. Settings are listed in `.env.example`.
 
 ## Export your data
 

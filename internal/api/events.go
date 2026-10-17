@@ -1,14 +1,10 @@
 package api
 
 import (
-	"context"
-	"errors"
-
 	"github.com/gofiber/fiber/v3"
 
 	"github.com/caustin/apptracker/internal/auth"
 	"github.com/caustin/apptracker/internal/domain"
-	"github.com/caustin/apptracker/internal/store"
 )
 
 func (r EventRequest) fields() (domain.EventFields, error) {
@@ -18,33 +14,12 @@ func (r EventRequest) fields() (domain.EventFields, error) {
 		PersonID:   v.ref("personId", r.PersonID),
 		Type:       v.enum("type", r.Type, domain.ValidEventType, ""),
 		Date:       v.requiredDate("date", r.Date),
-		Notes:      v.text(r.Notes),
-		Feedback:   v.text(r.Feedback),
-		Outcome:    v.text(r.Outcome),
+		Notes:      v.text("notes", r.Notes),
+		Feedback:   v.str("feedback", r.Feedback),
+		Outcome:    v.str("outcome", r.Outcome),
 		FollowupOn: v.date("followupOn", r.FollowupOn),
 	}
 	return f, v.err()
-}
-
-// checkEventRefs makes sure a linked position and person belong to the same user.
-func (h *handlers) checkEventRefs(ctx context.Context, userID string, f domain.EventFields) error {
-	if f.PositionID != nil {
-		if _, err := h.store.GetPosition(ctx, userID, *f.PositionID); err != nil {
-			if errors.Is(err, store.ErrNotFound) {
-				return fiber.NewError(fiber.StatusBadRequest, "position not found")
-			}
-			return err
-		}
-	}
-	if f.PersonID != nil {
-		if _, err := h.store.GetPerson(ctx, userID, *f.PersonID); err != nil {
-			if errors.Is(err, store.ErrNotFound) {
-				return fiber.NewError(fiber.StatusBadRequest, "person not found")
-			}
-			return err
-		}
-	}
-	return nil
 }
 
 // listEvents godoc
@@ -105,13 +80,9 @@ func (h *handlers) createEvent(c fiber.Ctx) error {
 	if err != nil {
 		return err
 	}
-	uid := auth.UserID(c)
-	if err := h.checkEventRefs(c, uid, f); err != nil {
-		return err
-	}
-	e, err := h.store.CreateEvent(c, uid, f)
+	e, err := h.store.CreateEvent(c, auth.UserID(c), f)
 	if err != nil {
-		return err
+		return storeErr(err)
 	}
 	return c.Status(fiber.StatusCreated).JSON(e)
 }
@@ -143,11 +114,7 @@ func (h *handlers) updateEvent(c fiber.Ctx) error {
 	if err != nil {
 		return err
 	}
-	uid := auth.UserID(c)
-	if err := h.checkEventRefs(c, uid, f); err != nil {
-		return err
-	}
-	e, err := h.store.UpdateEvent(c, uid, id, f)
+	e, err := h.store.UpdateEvent(c, auth.UserID(c), id, f)
 	if err != nil {
 		return storeErr(err)
 	}
