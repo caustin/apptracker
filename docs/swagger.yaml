@@ -1,0 +1,1125 @@
+basePath: /api/v1
+definitions:
+  api.ErrorResponse:
+    properties:
+      error:
+        example: not found
+        type: string
+    type: object
+  api.EventRequest:
+    properties:
+      date:
+        example: "2026-10-13"
+        format: date
+        type: string
+      feedback:
+        type: string
+      followupOn:
+        example: "2026-10-20"
+        format: date
+        type: string
+      notes:
+        type: string
+      outcome:
+        type: string
+      personId:
+        example: 7
+        type: integer
+      positionId:
+        example: 12
+        type: integer
+      type:
+        enum:
+        - email
+        - recruiter_call
+        - interview
+        - followup
+        - meeting
+        - note
+        example: recruiter_call
+        type: string
+    required:
+    - date
+    - type
+    type: object
+  api.GoalsRequest:
+    properties:
+      notes:
+        type: string
+      salaryMax:
+        example: 220000
+        type: integer
+      salaryMin:
+        example: 180000
+        type: integer
+      targetDate:
+        example: "2026-12-31"
+        format: date
+        type: string
+      targetRole:
+        example: Staff Engineer
+        type: string
+      weeklyApplications:
+        example: 5
+        minimum: 1
+        type: integer
+    required:
+    - weeklyApplications
+    type: object
+  api.HealthResponse:
+    properties:
+      status:
+        example: ok
+        type: string
+    type: object
+  api.LoginRequest:
+    properties:
+      email:
+        example: ada@example.com
+        type: string
+      password:
+        example: correct horse battery staple
+        type: string
+    type: object
+  api.OKResponse:
+    properties:
+      ok:
+        example: true
+        type: boolean
+    type: object
+  api.PersonRequest:
+    properties:
+      company:
+        example: Acme
+        type: string
+      email:
+        example: grace@acme.example
+        type: string
+      linkedin:
+        example: https://www.linkedin.com/in/grace
+        type: string
+      name:
+        example: Grace Hopper
+        type: string
+      notes:
+        type: string
+      phone:
+        type: string
+      role:
+        example: Recruiter
+        type: string
+    required:
+    - name
+    type: object
+  api.PositionRequest:
+    properties:
+      appliedAt:
+        description: |-
+          Stamped with today's date (UTC) the first time status reaches applied or
+          beyond. An existing value is kept when this is omitted.
+        example: "2026-10-13"
+        format: date
+        type: string
+      company:
+        example: Acme
+        type: string
+      description:
+        type: string
+      impressions:
+        type: string
+      location:
+        example: Remote
+        type: string
+      resumeId:
+        example: 3
+        type: integer
+      salaryMax:
+        example: 220000
+        type: integer
+      salaryMin:
+        example: 180000
+        type: integer
+      source:
+        example: LinkedIn
+        type: string
+      status:
+        description: Defaults to "lead".
+        enum:
+        - lead
+        - applied
+        - screening
+        - interviewing
+        - offer
+        - accepted
+        - rejected
+        - withdrawn
+        example: applied
+        type: string
+      title:
+        example: Staff Engineer
+        type: string
+      url:
+        example: https://acme.example/jobs/42
+        type: string
+    required:
+    - company
+    - title
+    type: object
+  api.ResumeRenameRequest:
+    properties:
+      name:
+        example: Platform-focused v4
+        type: string
+    required:
+    - name
+    type: object
+  api.SessionResponse:
+    properties:
+      user:
+        $ref: '#/definitions/domain.User'
+    type: object
+  api.SignupRequest:
+    properties:
+      email:
+        example: ada@example.com
+        type: string
+      name:
+        example: Ada Lovelace
+        type: string
+      password:
+        example: correct horse battery staple
+        maxLength: 128
+        minLength: 12
+        type: string
+    type: object
+  domain.Event:
+    properties:
+      createdAt:
+        example: "2026-10-13"
+        type: string
+      date:
+        example: "2026-10-13"
+        type: string
+      feedback:
+        type: string
+      followupOn:
+        example: "2026-10-20"
+        type: string
+      id:
+        example: 31
+        type: integer
+      notes:
+        type: string
+      outcome:
+        type: string
+      personId:
+        example: 7
+        type: integer
+      positionId:
+        example: 12
+        type: integer
+      type:
+        enum:
+        - email
+        - recruiter_call
+        - interview
+        - followup
+        - meeting
+        - note
+        example: recruiter_call
+        type: string
+      userId:
+        type: string
+    type: object
+  domain.Goals:
+    properties:
+      notes:
+        type: string
+      salaryMax:
+        example: 220000
+        type: integer
+      salaryMin:
+        example: 180000
+        type: integer
+      targetDate:
+        example: "2026-12-31"
+        type: string
+      targetRole:
+        example: Staff Engineer
+        type: string
+      userId:
+        type: string
+      weeklyApplications:
+        example: 5
+        type: integer
+    type: object
+  domain.Person:
+    properties:
+      company:
+        example: Acme
+        type: string
+      createdAt:
+        example: "2026-10-12"
+        type: string
+      email:
+        example: grace@acme.example
+        type: string
+      id:
+        example: 7
+        type: integer
+      linkedin:
+        example: https://www.linkedin.com/in/grace
+        type: string
+      name:
+        example: Grace Hopper
+        type: string
+      notes:
+        type: string
+      phone:
+        type: string
+      role:
+        example: Recruiter
+        type: string
+      userId:
+        type: string
+    type: object
+  domain.Position:
+    properties:
+      appliedAt:
+        example: "2026-10-13"
+        type: string
+      company:
+        example: Acme
+        type: string
+      createdAt:
+        example: "2026-10-12"
+        type: string
+      description:
+        type: string
+      id:
+        example: 12
+        type: integer
+      impressions:
+        type: string
+      location:
+        example: Remote
+        type: string
+      resumeId:
+        example: 3
+        type: integer
+      salaryMax:
+        example: 220000
+        type: integer
+      salaryMin:
+        example: 180000
+        type: integer
+      source:
+        example: LinkedIn
+        type: string
+      status:
+        enum:
+        - lead
+        - applied
+        - screening
+        - interviewing
+        - offer
+        - accepted
+        - rejected
+        - withdrawn
+        example: applied
+        type: string
+      title:
+        example: Staff Engineer
+        type: string
+      url:
+        example: https://acme.example/jobs/42
+        type: string
+      userId:
+        type: string
+    type: object
+  domain.Resume:
+    properties:
+      createdAt:
+        example: "2026-10-12"
+        type: string
+      id:
+        example: 3
+        type: integer
+      name:
+        example: Platform-focused v3
+        type: string
+      userId:
+        type: string
+    type: object
+  domain.User:
+    properties:
+      createdAt:
+        example: "2026-10-13T09:30:00Z"
+        type: string
+      email:
+        example: ada@example.com
+        type: string
+      id:
+        example: 4f7c1b9e-2a1d-4c55-9a51-0d6f3b1e8a77
+        type: string
+      name:
+        example: Ada Lovelace
+        type: string
+      updatedAt:
+        example: "2026-10-13T09:30:00Z"
+        type: string
+    type: object
+externalDocs:
+  description: Port plan and design notes live in planning/
+info:
+  contact: {}
+  description: 'Job-search tracker: positions, people, events, resumes and goals.
+    Every route except sign-up, login, session and health needs the session cookie
+    set by login. Unsafe methods are rejected when the browser marks them cross-site
+    or same-site; JSON bodies must be sent as application/json.'
+  license:
+    name: MIT
+  title: AppTracker API
+  version: "1.0"
+paths:
+  /auth/login:
+    post:
+      consumes:
+      - application/json
+      description: Starts a new session (a fresh session ID) and sets the session
+        cookie.
+      parameters:
+      - description: Credentials
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/api.LoginRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/api.SessionResponse'
+        "401":
+          description: Invalid email or password
+          schema:
+            $ref: '#/definitions/api.ErrorResponse'
+        "415":
+          description: Unsupported Media Type
+          schema:
+            $ref: '#/definitions/api.ErrorResponse'
+        "429":
+          description: Too Many Requests
+          schema:
+            $ref: '#/definitions/api.ErrorResponse'
+      summary: Sign in
+      tags:
+      - auth
+  /auth/logout:
+    post:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/api.OKResponse'
+      summary: Sign out
+      tags:
+      - auth
+  /auth/session:
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/api.SessionResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/api.ErrorResponse'
+      summary: Current user
+      tags:
+      - auth
+  /auth/signup:
+    post:
+      consumes:
+      - application/json
+      description: Email is lowercased and must be unused. Password is 12–128 characters.
+        Sets the session cookie.
+      parameters:
+      - description: New account
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/api.SignupRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/api.SessionResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/api.ErrorResponse'
+        "409":
+          description: Email already registered
+          schema:
+            $ref: '#/definitions/api.ErrorResponse'
+        "415":
+          description: Unsupported Media Type
+          schema:
+            $ref: '#/definitions/api.ErrorResponse'
+        "429":
+          description: Too Many Requests
+          schema:
+            $ref: '#/definitions/api.ErrorResponse'
+      summary: Create an account and sign in
+      tags:
+      - auth
+  /events:
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/domain.Event'
+            type: array
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/api.ErrorResponse'
+      summary: List events
+      tags:
+      - events
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: Event
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/api.EventRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/domain.Event'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/api.ErrorResponse'
+        "415":
+          description: Unsupported Media Type
+          schema:
+            $ref: '#/definitions/api.ErrorResponse'
+      summary: Log an event
+      tags:
+      - events
+  /events/{id}:
+    delete:
+      parameters:
+      - description: Event ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/api.OKResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/api.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/api.ErrorResponse'
+      summary: Delete an event
+      tags:
+      - events
+    get:
+      parameters:
+      - description: Event ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/domain.Event'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/api.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/api.ErrorResponse'
+      summary: Get an event
+      tags:
+      - events
+    put:
+      consumes:
+      - application/json
+      description: 'Full replace: fields not sent are cleared.'
+      parameters:
+      - description: Event ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: Event
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/api.EventRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/domain.Event'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/api.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/api.ErrorResponse'
+        "415":
+          description: Unsupported Media Type
+          schema:
+            $ref: '#/definitions/api.ErrorResponse'
+      summary: Replace an event
+      tags:
+      - events
+  /export:
+    get:
+      description: A zip holding data.json (every row you own) and resumes/<id>-<name>.pdf
+        for each stored file. Streamed, so there is no size cap.
+      produces:
+      - application/zip
+      responses:
+        "200":
+          description: OK
+          schema:
+            type: file
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/api.ErrorResponse'
+      summary: Export all your data
+      tags:
+      - export
+  /goals:
+    get:
+      description: Returns defaults (5 applications a week, everything else null)
+        until goals are saved.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/domain.Goals'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/api.ErrorResponse'
+      summary: Get goals
+      tags:
+      - goals
+    put:
+      consumes:
+      - application/json
+      description: Full replace (upsert). weeklyApplications must be at least 1.
+      parameters:
+      - description: Goals
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/api.GoalsRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/domain.Goals'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/api.ErrorResponse'
+        "415":
+          description: Unsupported Media Type
+          schema:
+            $ref: '#/definitions/api.ErrorResponse'
+      summary: Save goals
+      tags:
+      - goals
+  /health:
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/api.HealthResponse'
+      summary: Health check
+      tags:
+      - meta
+  /people:
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/domain.Person'
+            type: array
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/api.ErrorResponse'
+      summary: List people
+      tags:
+      - people
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: Person
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/api.PersonRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/domain.Person'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/api.ErrorResponse'
+        "415":
+          description: Unsupported Media Type
+          schema:
+            $ref: '#/definitions/api.ErrorResponse'
+      summary: Create a person
+      tags:
+      - people
+  /people/{id}:
+    delete:
+      description: Events that mention this person keep their other details; their
+        person link is cleared.
+      parameters:
+      - description: Person ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/api.OKResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/api.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/api.ErrorResponse'
+      summary: Delete a person
+      tags:
+      - people
+    get:
+      parameters:
+      - description: Person ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/domain.Person'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/api.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/api.ErrorResponse'
+      summary: Get a person
+      tags:
+      - people
+    put:
+      consumes:
+      - application/json
+      description: 'Full replace: fields not sent are cleared.'
+      parameters:
+      - description: Person ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: Person
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/api.PersonRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/domain.Person'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/api.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/api.ErrorResponse'
+        "415":
+          description: Unsupported Media Type
+          schema:
+            $ref: '#/definitions/api.ErrorResponse'
+      summary: Replace a person
+      tags:
+      - people
+  /positions:
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/domain.Position'
+            type: array
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/api.ErrorResponse'
+      summary: List positions
+      tags:
+      - positions
+    post:
+      consumes:
+      - application/json
+      description: appliedAt is stamped with today's date (UTC) when the status is
+        applied or beyond and none is sent.
+      parameters:
+      - description: Position
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/api.PositionRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/domain.Position'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/api.ErrorResponse'
+        "415":
+          description: Unsupported Media Type
+          schema:
+            $ref: '#/definitions/api.ErrorResponse'
+      summary: Create a position
+      tags:
+      - positions
+  /positions/{id}:
+    delete:
+      description: Also deletes the position's events.
+      parameters:
+      - description: Position ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/api.OKResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/api.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/api.ErrorResponse'
+      summary: Delete a position
+      tags:
+      - positions
+    get:
+      parameters:
+      - description: Position ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/domain.Position'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/api.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/api.ErrorResponse'
+      summary: Get a position
+      tags:
+      - positions
+    put:
+      consumes:
+      - application/json
+      description: 'Full replace: fields not sent are cleared, except appliedAt, which
+        keeps its stored value when omitted. It is stamped with today''s date (UTC)
+        the first time the status reaches applied or beyond.'
+      parameters:
+      - description: Position ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: Position
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/api.PositionRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/domain.Position'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/api.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/api.ErrorResponse'
+        "415":
+          description: Unsupported Media Type
+          schema:
+            $ref: '#/definitions/api.ErrorResponse'
+      summary: Replace a position
+      tags:
+      - positions
+  /resumes:
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/domain.Resume'
+            type: array
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/api.ErrorResponse'
+      summary: List resumes
+      tags:
+      - resumes
+    post:
+      consumes:
+      - multipart/form-data
+      description: PDF only (checked by content type or extension, and by the %PDF-
+        signature), 15 MB max, 25 per user.
+      parameters:
+      - description: The PDF
+        in: formData
+        name: file
+        required: true
+        type: file
+      - description: Label; defaults to the file name without .pdf
+        in: formData
+        name: name
+        type: string
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/domain.Resume'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/api.ErrorResponse'
+        "413":
+          description: Request Entity Too Large
+          schema:
+            $ref: '#/definitions/api.ErrorResponse'
+      summary: Upload a resume PDF
+      tags:
+      - resumes
+  /resumes/{id}:
+    delete:
+      description: Removes the file first; if that fails the row is kept and the response
+        is 500. Positions using the resume are unlinked.
+      parameters:
+      - description: Resume ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/api.OKResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/api.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/api.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/api.ErrorResponse'
+      summary: Delete a resume
+      tags:
+      - resumes
+    put:
+      consumes:
+      - application/json
+      parameters:
+      - description: Resume ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: New label
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/api.ResumeRenameRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/domain.Resume'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/api.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/api.ErrorResponse'
+        "415":
+          description: Unsupported Media Type
+          schema:
+            $ref: '#/definitions/api.ErrorResponse'
+      summary: Rename a resume
+      tags:
+      - resumes
+  /resumes/{id}/file:
+    get:
+      description: Always an attachment named resume.pdf with nosniff, so a PDF's
+        embedded script never runs in the app's origin and the user's label never
+        reaches a header.
+      parameters:
+      - description: Resume ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/pdf
+      responses:
+        "200":
+          description: OK
+          schema:
+            type: file
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/api.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/api.ErrorResponse'
+      summary: Download a resume
+      tags:
+      - resumes
+swagger: "2.0"

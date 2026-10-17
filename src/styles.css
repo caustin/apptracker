@@ -950,3 +950,42 @@ textarea {
     cursor: pointer;
     text-decoration: underline;
 }
+
+/* ---------- inline validation ---------- */
+
+.field-error,
+.field-hint {
+    font-size: 12.5px;
+    font-weight: 600;
+    letter-spacing: normal;
+    text-transform: none;
+}
+
+.field-error {
+    color: var(--red);
+}
+
+.field-hint {
+    color: var(--ink-soft);
+    font-weight: 400;
+}
+
+input[aria-invalid="true"],
+select[aria-invalid="true"],
+textarea[aria-invalid="true"] {
+    border-color: var(--red);
+    background: #fffaf8;
+}
+
+input[aria-invalid="true"]:focus,
+select[aria-invalid="true"]:focus,
+textarea[aria-invalid="true"]:focus {
+    border-color: var(--red);
+    box-shadow: 0 0 0 3px rgba(171, 61, 44, 0.13);
+}
+
+.rename-field {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}

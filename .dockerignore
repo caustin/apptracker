@@ -1,0 +1,10 @@
+node_modules
+data
+bin
+tmp
+planning
+.git
+.idea
+.claude
+internal/web/dist/*
+!internal/web/dist/.gitkeep
