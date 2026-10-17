@@ -1,7 +1,24 @@
 node_modules/
-dist/
+/dist/
 data/
 *.log
 .claude/
 .dev.vars
 .wrangler/
+.idea/
+planning/
+
+# Go build output, air's temp dir, local env
+/bin/
+/tmp/
+/apptracker
+.env
+
+# Vite build output embedded by internal/web (the placeholder keeps go:embed happy)
+internal/web/dist/*
+!internal/web/dist/.gitkeep
+
+# SQLite files outside data/
+*.db
+*.db-shm
+*.db-wal
